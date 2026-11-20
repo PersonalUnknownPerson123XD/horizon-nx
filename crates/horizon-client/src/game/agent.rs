@@ -671,6 +671,10 @@ impl Game<'_> {
             Mode::Onboarding(_) => json!({ "mode": "accessibility-onboarding" }),
             Mode::ConfirmUpdate { build } => json!({ "mode": "confirm-update", "build": build }),
             Mode::BanNotice(_) => json!({ "mode": "ban-notice" }),
+            Mode::Account => json!({
+                "mode": "account",
+                "signed_in": horizon_client::auth::current().map(|a| a.name.clone()),
+            }),
         }
     }
 

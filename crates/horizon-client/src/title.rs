@@ -203,6 +203,103 @@ impl WorldToast {
 
 /// The Main screen's update button (`switch_update`), where Realms' sits.
 const UPDATE: u8 = 8;
+/// The Main screen's Microsoft account button (`msa`), beside the update's on the Switch.
+const ACCOUNT: u8 = 9;
+/// The account screen's buttons.
+const ACCOUNT_SIGN_IN: u8 = 120;
+const ACCOUNT_SIGN_OUT: u8 = 121;
+const ACCOUNT_CANCEL: u8 = 122;
+const ACCOUNT_BACK: u8 = 123;
+
+/// Whether the title offers the Microsoft account button: on the Switch, where no launcher signs
+/// in (`HORIZON_ACCOUNT_BUTTON=1` shows it elsewhere, to try it).
+fn account_button_shown() -> bool {
+    cfg!(target_os = "horizon") || std::env::var_os("HORIZON_ACCOUNT_BUTTON").is_some()
+}
+
+/// What the account screen shows: its lines, and whether a sign-in is under way.
+fn account_lines(sign_in: Option<&crate::msa::State>) -> (Vec<(String, u32)>, bool) {
+    use crate::msa::State;
+    let white = u32::MAX;
+    let grey = rgba(170, 170, 170, 255);
+    let yellow = rgba(255, 255, 85, 255);
+    match sign_in {
+        Some(State::Contacting) => (
+            vec![(
+                lang::get_or("horizon.account.contacting", "Contacting Microsoft..."),
+                white,
+            )],
+            true,
+        ),
+        Some(State::Code { url, code }) => (
+            vec![
+                (
+                    lang::get_or(
+                        "horizon.account.code.step",
+                        "On your phone or computer, open this page:",
+                    ),
+                    white,
+                ),
+                (url.clone(), yellow),
+                (
+                    lang::get_or("horizon.account.code.enter", "and enter this code:"),
+                    white,
+                ),
+                (code.clone(), yellow),
+                (String::new(), white),
+                (
+                    lang::get_or(
+                        "horizon.account.code.waiting",
+                        "Waiting for you to sign in...",
+                    ),
+                    grey,
+                ),
+            ],
+            true,
+        ),
+        Some(State::Finishing) => (
+            vec![(
+                lang::get_or("horizon.account.finishing", "Signing in to Minecraft..."),
+                white,
+            )],
+            true,
+        ),
+        Some(State::Failed(reason)) => (
+            vec![
+                (
+                    lang::get_or("horizon.account.failed", "Sign-in failed"),
+                    rgba(255, 85, 85, 255),
+                ),
+                (reason.clone(), white),
+            ],
+            false,
+        ),
+        Some(State::SignedIn { .. }) | None => match crate::auth::current() {
+            Some(session) => (
+                vec![(
+                    translate(
+                        "horizon.account.signed_in",
+                        "Signed in as %s",
+                        &[&session.name],
+                    ),
+                    white,
+                )],
+                false,
+            ),
+            None => (
+                vec![(
+                    lang::get_or(
+                        "horizon.account.signed_out",
+                        "Sign in with the Microsoft account that owns Minecraft: Java Edition to play on online servers as yourself. Your sign-in is kept on the SD card until you sign out.",
+                    ),
+                    white,
+                )],
+                false,
+            ),
+        },
+    }
+}
+
 /// The update question's buttons.
 const UPDATE_YES: u8 = 96;
 const UPDATE_NO: u8 = 97;
@@ -418,6 +515,9 @@ pub enum Mode {
     },
     /// `BanNoticeScreens`: a ConfirmLinkScreen `Gui.addInitialScreens` queued.
     BanNotice(crate::ban_notice::Notice),
+    /// Horizon's Microsoft account screen (`msa`): sign in with a code, or sign out. The Switch
+    /// has no launcher to sign in for it.
+    Account,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
@@ -521,6 +621,8 @@ pub struct Title {
     preparing: bool,
     /// The confirm screen's Back: the Data Packs screen reopens.
     reopen_data_packs: bool,
+    /// The account screen's sign-in under way (`msa`); dropping it cancels it.
+    sign_in: Option<crate::msa::SignIn>,
 }
 pub(crate) struct Button {
     x: f32,
@@ -871,6 +973,21 @@ impl Title {
             confirm_experiments: RefCell::new(None),
             preparing: false,
             reopen_data_packs: false,
+            sign_in: None,
+        }
+    }
+    /// The account screen's Cancel: a sign-in under way stops, and it neither keeps nor saves
+    /// the account, even one it signed in just now (`msa::SignIn::cancel`). A finished one
+    /// stays.
+    fn cancel_sign_in(&mut self) {
+        if let Some(sign_in) = self.sign_in.take() {
+            let busy = !matches!(
+                sign_in.state(),
+                crate::msa::State::SignedIn { .. } | crate::msa::State::Failed(_)
+            );
+            if busy {
+                sign_in.cancel();
+            }
         }
     }
     /// Vanilla bypasses the selector when there are no saves.
@@ -1817,19 +1934,23 @@ impl Title {
                         self.allows_multiplayer,
                         4,
                     ),
-                    // On the Switch an update stands in for Realms (switch_update).
-                    match update_button(&crate::switch_update::status()) {
-                        Some((label, enabled)) => {
-                            b(cx - 100.0, y + 48.0, 200.0, &label, enabled, UPDATE)
+                    // On the Switch an update stands in for Realms (switch_update), and the
+                    // Microsoft account button (msa) takes the row's right half.
+                    {
+                        let width = if account_button_shown() { 98.0 } else { 200.0 };
+                        match update_button(&crate::switch_update::status()) {
+                            Some((label, enabled)) => {
+                                b(cx - 100.0, y + 48.0, width, &label, enabled, UPDATE)
+                            }
+                            None => b(
+                                cx - 100.0,
+                                y + 48.0,
+                                width,
+                                &lang::get_or("menu.online", "Minecraft Realms"),
+                                false,
+                                0,
+                            ),
                         }
-                        None => b(
-                            cx - 100.0,
-                            y + 48.0,
-                            200.0,
-                            &lang::get_or("menu.online", "Minecraft Realms"),
-                            false,
-                            0,
-                        ),
                     },
                     b(
                         cx - 100.0,
@@ -1848,6 +1969,13 @@ impl Title {
                         2,
                     ),
                 ];
+                if account_button_shown() {
+                    let label = match crate::auth::current() {
+                        Some(session) => session.name.clone(),
+                        None => lang::get_or("horizon.account.button", "Sign In"),
+                    };
+                    buttons.push(b(cx + 2.0, y + 48.0, 98.0, &label, true, ACCOUNT));
+                }
                 // CommonButtons' icon buttons; Horizon's Join a Friend (an
                 // invite code) sits behind vanilla's Friends button.
                 for (i, (key, plain, id, icon)) in [
@@ -2051,6 +2179,65 @@ impl Title {
                         95,
                     ),
                 ]
+            }
+            Mode::Account => {
+                let y = confirm_top(h, self.message_lines.get())
+                    + 41.0
+                    + self.message_lines.get() as f32 * 9.0;
+                let state = self.sign_in.as_ref().map(crate::msa::SignIn::state);
+                let (_, busy) = account_lines(state.as_ref());
+                let (cx, left, right) = (
+                    (w / 2.0).floor(),
+                    (w / 2.0).floor() - 152.0,
+                    (w / 2.0).floor() + 2.0,
+                );
+                if busy {
+                    vec![b(
+                        cx - 75.0,
+                        y,
+                        150.0,
+                        &lang::get_or("gui.cancel", "Cancel"),
+                        true,
+                        ACCOUNT_CANCEL,
+                    )]
+                } else if crate::auth::current().is_some() {
+                    vec![
+                        b(
+                            left,
+                            y,
+                            150.0,
+                            &lang::get_or("horizon.account.sign_out", "Sign Out"),
+                            true,
+                            ACCOUNT_SIGN_OUT,
+                        ),
+                        b(
+                            right,
+                            y,
+                            150.0,
+                            &lang::get_or("gui.done", "Done"),
+                            true,
+                            ACCOUNT_BACK,
+                        ),
+                    ]
+                } else {
+                    let again = matches!(state, Some(crate::msa::State::Failed(_)));
+                    let label = if again {
+                        lang::get_or("horizon.account.retry", "Try Again")
+                    } else {
+                        lang::get_or("horizon.account.sign_in", "Sign In")
+                    };
+                    vec![
+                        b(left, y, 150.0, &label, true, ACCOUNT_SIGN_IN),
+                        b(
+                            right,
+                            y,
+                            150.0,
+                            &lang::get_or("gui.back", "Back"),
+                            true,
+                            ACCOUNT_BACK,
+                        ),
+                    ]
+                }
             }
             Mode::ConfirmUpdate { .. } => {
                 let y = confirm_top(h, self.message_lines.get())
@@ -3069,6 +3256,32 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     centered(atlas, batch, line, top + 17.0 + i as f32 * 9.0, u32::MAX);
                 }
             }
+            Mode::Account => {
+                crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
+                let state = self.sign_in.as_ref().map(crate::msa::SignIn::state);
+                let (message, _) = account_lines(state.as_ref());
+                let mut lines = Vec::new();
+                for (text, color) in &message {
+                    if text.is_empty() {
+                        lines.push((String::new(), *color));
+                    }
+                    for line in wrapped(atlas, text, w - 50.0) {
+                        lines.push((line, *color));
+                    }
+                }
+                self.message_lines.set(lines.len());
+                let top = confirm_top(h, lines.len());
+                centered(
+                    atlas,
+                    batch,
+                    &lang::get_or("horizon.account.title", "Microsoft Account"),
+                    top,
+                    u32::MAX,
+                );
+                for (i, (line, color)) in lines.iter().enumerate() {
+                    centered(atlas, batch, line, top + 17.0 + i as f32 * 9.0, *color);
+                }
+            }
             Mode::ConfirmUpdate { build } => {
                 crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
                 let (title, message) = update_question(*build);
@@ -3558,6 +3771,33 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     121 => Action::CopyText(crate::ban_notice::SUSPENSION_HELP.to_owned()),
                     _ => Action::None,
                 }
+            }
+            (Mode::Main, Some(ACCOUNT)) => {
+                self.sign_in = None;
+                self.mode = Mode::Account;
+                Action::None
+            }
+            (Mode::Account, Some(ACCOUNT_SIGN_IN)) => {
+                if let Some(dir) = self.saves.parent() {
+                    self.sign_in = Some(crate::msa::SignIn::start(dir.to_path_buf()));
+                }
+                Action::None
+            }
+            (Mode::Account, Some(ACCOUNT_SIGN_OUT)) => {
+                if let Some(dir) = self.saves.parent() {
+                    crate::msa::sign_out(dir);
+                }
+                self.sign_in = None;
+                Action::None
+            }
+            (Mode::Account, Some(ACCOUNT_CANCEL)) => {
+                self.cancel_sign_in();
+                Action::None
+            }
+            (Mode::Account, Some(ACCOUNT_BACK)) => {
+                self.sign_in = None;
+                self.mode = Mode::Main;
+                Action::None
             }
             (Mode::Main, Some(4)) => {
                 // TitleScreen.init: SafetyScreen first, unless it was turned off.
@@ -4690,6 +4930,11 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             Mode::Onboarding(_) => self.onboarding_close(),
             // ConfirmScreen.keyPressed: Escape answers no, which runs `next`.
             Mode::BanNotice(_) => self.next_ban_notice(),
+            Mode::Account => {
+                // Escape while signing in is Cancel; after it, Back.
+                self.cancel_sign_in();
+                self.mode = Mode::Main;
+            }
             _ => self.mode = Mode::Main,
         }
     }

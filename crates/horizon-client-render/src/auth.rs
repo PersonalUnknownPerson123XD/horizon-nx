@@ -5,7 +5,7 @@
 //! process's memory: it is never logged, printed or written anywhere.
 use std::{
     path::Path,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
 
@@ -40,6 +40,15 @@ pub fn parse_uuid(text: &str) -> Option<u128> {
 }
 
 impl AuthSession {
+    /// A session signed in by the game itself (`msa`).
+    pub fn signed_in(name: String, uuid: u128, xuid: Option<String>, access_token: String) -> Self {
+        Self {
+            name,
+            uuid,
+            xuid,
+            access_token,
+        }
+    }
     /// For tests and harnesses.
     pub fn new(name: &str, uuid: u128, access_token: &str) -> Self {
         Self {
@@ -119,14 +128,19 @@ impl AuthSession {
     }
 }
 
-static CURRENT: OnceLock<Arc<AuthSession>> = OnceLock::new();
+static CURRENT: Mutex<Option<Arc<AuthSession>>> = Mutex::new(None);
 
-/// The account this game was started with (set once at start).
+/// The signed-in account: the one the game was started with, or, on the Switch, the one signed
+/// in on the title screen (`msa`). Worlds and servers opened afterwards play as it.
 pub fn set_current(session: AuthSession) {
-    let _ = CURRENT.set(Arc::new(session));
+    *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(session));
+}
+/// Sign out: worlds and servers opened afterwards play under the offline name.
+pub fn clear_current() {
+    *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 pub fn current() -> Option<Arc<AuthSession>> {
-    CURRENT.get().cloned()
+    CURRENT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Why joining a server through the session service failed, like the

@@ -67,6 +67,7 @@ pub mod model_library;
 pub mod models;
 pub mod multiline_edit;
 pub mod native_emissive;
+pub mod msa;
 pub mod options_file;
 pub mod options_fixes;
 pub mod options_ui;

@@ -616,6 +616,11 @@ impl Options {
                 .and_then(|()| std::env::set_current_dir(&dir))
                 .map_err(|e| format!("game folder {}: {e}", dir.display()))?;
         }
+        // No launcher signed in: the account the game itself signed in before (msa, the
+        // Switch's title screen), renewed off the main thread.
+        if horizon_client::auth::current().is_none() {
+            horizon_client::msa::resume_in_background(std::env::current_dir()?);
+        }
         // Vanilla's quick play (Main, QuickPlay.joinSingleplayerWorld): only a
         // world that exists opens; else the title screen. --world also creates one.
         if let Some(world) = o.quick_play.take() {
