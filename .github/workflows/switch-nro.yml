@@ -1,0 +1,105 @@
+# Builds horizon.nro (the Nintendo Switch homebrew build) with packaging/switch/build.sh and uploads
+# it, with client.txt, as an artifact laid out like the SD card (switch/horizon/): docs/switch.md.
+# Runs on pushes to switch, on pull requests that touch the Switch build, and from the Actions tab.
+name: Switch NRO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [switch]
+  pull_request:
+    paths:
+      - 'packaging/switch/**'
+      - '.github/workflows/switch-nro.yml'
+      - 'crates/horizon-nx/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: switch-nro-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The revisions packaging/switch/build.sh was written against: bevy-horizon for the toolchain,
+  # target spec and patched crates, and the mesa-switch whose NVK release 0.1.0 linked (bevy-horizon's
+  # mesa-switch patches are already in its history).
+  BEVY_HORIZON_REV: 3eac779b232ee47cd0eb957676c64386ac7b0f1d
+  MESA_SWITCH_URL: https://github.com/JohnUzoka/mesa-switch.git
+  MESA_SWITCH_REV: 7789c1de1d42120b3032696ad71d5b9a736a8d4f
+
+jobs:
+  nro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          path: horizon-nx
+
+      - name: Check out bevy-horizon (toolchain, patched crates, NVK scripts)
+        run: |
+          git clone https://github.com/JohnUzoka/bevy-horizon.git bevy-horizon
+          git -C bevy-horizon checkout --quiet "$BEVY_HORIZON_REV"
+
+      # The toolchain image is kept between runs: pkg.devkitpro.org refuses some CI machines,
+      # so it is only built when its recipe changes.
+      - name: Toolchain image cache
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: toolchain-image.tar
+          key: toolchain-${{ hashFiles('horizon-nx/packaging/switch/Containerfile', 'horizon-nx/packaging/switch/portlibs-fallback.sh') }}-v1
+
+      - name: Toolchain image
+        run: |
+          set -o pipefail
+          if [ -f toolchain-image.tar ]; then
+            docker load -i toolchain-image.tar 2>&1 | tee -a build.log
+          else
+            horizon-nx/packaging/switch/build.sh image 2>&1 | tee -a build.log
+            docker save -o toolchain-image.tar horizon-switch-toolchain:local bevy-horizon-toolchain:local
+          fi
+
+      - name: NVK cache
+        id: nvk
+        uses: actions/cache@v4
+        with:
+          path: bevy-horizon/nvk
+          key: nvk-${{ env.BEVY_HORIZON_REV }}-${{ env.MESA_SWITCH_REV }}-v1
+
+      - name: Build NVK (Mesa's Vulkan driver; slow, cached)
+        if: steps.nvk.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          git clone "$MESA_SWITCH_URL" mesa-switch
+          git -C mesa-switch checkout --quiet "$MESA_SWITCH_REV"
+          # Its history already holds bevy-horizon's mesa-switch patches (and later changes to the
+          # same lines), so the build script must not apply them again.
+          rm -f bevy-horizon/patches/mesa-switch/*.patch
+          JOBS=4 horizon-nx/packaging/switch/build.sh nvk 2>&1 | tee -a build.log
+
+      - name: Build horizon.nro
+        run: |
+          set -o pipefail
+          # The HOME menu's version line; a release sets VERSION and HORIZON_SWITCH_BUILD itself.
+          export VERSION="dev ${GITHUB_SHA::7}"
+          JOBS=4 horizon-nx/packaging/switch/build.sh nro 2>&1 | tee -a build.log
+
+      - name: Package
+        run: |
+          mkdir -p out/switch/horizon
+          cp horizon-nx/target/aarch64-nintendo-horizon/release/horizon.nro out/switch/horizon/
+          printf 'This file makes horizon.nro start the game. Without it, it runs a dedicated server.\n' > out/switch/horizon/client.txt
+          sha256sum out/switch/horizon/horizon.nro | tee -a build.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: horizon-switch-${{ github.sha }}
+          path: out
+          if-no-files-found: error

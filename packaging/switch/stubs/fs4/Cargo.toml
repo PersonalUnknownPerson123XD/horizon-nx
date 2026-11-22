@@ -1,0 +1,12 @@
+[package]
+name = "fs4"
+version = "1.1.0"
+edition = "2021"
+license = "MIT"
+description = "Switch build only: fs4's available_space, the one call the game makes, through newlib's statvfs."
+
+[features]
+sync = []
+
+[dependencies]
+libc = "0.2"

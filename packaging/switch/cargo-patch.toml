@@ -1,0 +1,24 @@
+# The crates the Switch build patches (docs/switch.md). Pass it from the repository root:
+#   cargo build --config packaging/switch/cargo-patch.toml --target aarch64-nintendo-horizon.json ...
+# The patches only act on `target_os = "horizon"`, so the copies in third_party/ behave like the
+# originals on every other platform. wgpu-hal is patched for everyone in the root Cargo.toml.
+# Paths are relative to packaging/, the parent of this folder (cargo's rule for config files).
+[patch.crates-io]
+wgpu = { path = "../third_party/wgpu" }
+wgpu-core = { path = "../third_party/wgpu-core" }
+wgpu-core-deps-windows-linux-android = { path = "../third_party/wgpu-core-deps-windows-linux-android" }
+getrandom03 = { path = "../third_party/getrandom-0.3", package = "getrandom" }
+winit = { path = "../third_party/winit" }
+# mio 1.2.5 with the Switch's poll(2) types and a waker that works across threads without a pipe;
+# socket2 0.5.10 without the calls libnx's sockets lack. Their Horizon code is inert elsewhere.
+mio = { path = "../third_party/mio" }
+socket2 = { path = "../third_party/socket2" }
+# Stand-ins with the few calls the game makes, for crates whose Unix code needs what Horizon's
+# newlib lacks (X11/Wayland, getifaddrs, rustix's file system): packaging/switch/stubs/.
+arboard = { path = "switch/stubs/arboard" }
+if-addrs = { path = "switch/stubs/if-addrs" }
+fs4 = { path = "switch/stubs/fs4" }
+
+# `-z notext`, as bevy-horizon's examples pass from their build.rs (text relocations are kept).
+[target.aarch64-nintendo-horizon]
+rustflags = ["-C", "link-arg=-z", "-C", "link-arg=notext"]

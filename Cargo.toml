@@ -1,5 +1,5 @@
 [workspace]
-exclude = ["launcher", "crates/horizon-telemetry-server", "crates/horizon-mod-registry", "third_party/wgpu-hal", "third_party/naga", "third_party/libmimalloc-sys", "third_party/gilrs-core"]
+exclude = ["launcher", "crates/horizon-telemetry-server", "crates/horizon-mod-registry", "third_party/wgpu-hal", "third_party/naga", "third_party/libmimalloc-sys", "third_party/gilrs-core", "packaging/switch/stubs/arboard", "packaging/switch/stubs/if-addrs", "packaging/switch/stubs/fs4"]
 members = [
     "crates/horizon-nx",
     "crates/horizon-core",

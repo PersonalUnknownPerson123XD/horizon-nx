@@ -1,0 +1,6 @@
+[package]
+name = "if-addrs"
+version = "0.13.4"
+edition = "2021"
+license = "MIT"
+description = "Switch build only: if-addrs' API as the game uses it. libnx has no getifaddrs; the console's one address comes from its network service (nifm)."

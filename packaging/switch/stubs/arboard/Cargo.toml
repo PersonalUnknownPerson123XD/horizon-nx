@@ -1,0 +1,9 @@
+[package]
+name = "arboard"
+version = "3.6.1"
+edition = "2021"
+license = "MIT"
+description = "Switch build only: arboard's API as the game uses it, with no system clipboard behind it (Horizon OS has none an NRO can reach). Text copied in the game is still pasted in the game."
+
+[features]
+wayland-data-control = []
