@@ -3247,6 +3247,40 @@ pub fn spawn(job: Job, mut cmd: Command, tx: Sender<Msg>) -> Result<Running, Str
     Ok(Running { child, stdin })
 }
 
+
+/// The launcher's design language, as the player picks it in Settings. Horizon is the design
+/// system's own look; Switch keeps the same layout (top bar, sidebar, pages) and paints it in a
+/// flat, rounded language: charcoal or pale plates, a cyan or blue focus accent, and a row of
+/// button hints at the foot of the window. Nothing in it is Nintendo's art.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LauncherLook {
+    #[default]
+    Horizon,
+    Switch,
+}
+
+impl LauncherLook {
+    pub const ALL: [LauncherLook; 2] = [Self::Horizon, Self::Switch];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Horizon => "horizon",
+            Self::Switch => "switch",
+        }
+    }
+
+    /// `HORIZON_LAUNCHER_LOOK=switch` or `horizon` wins over the saved setting (for screenshots
+    /// and tests).
+    pub fn from_settings(saved: Self) -> Self {
+        match std::env::var("HORIZON_LAUNCHER_LOOK").as_deref() {
+            Ok("switch") => Self::Switch,
+            Ok("horizon") => Self::Horizon,
+            _ => saved,
+        }
+    }
+}
+
 /// The launcher's appearance, as the player picks it in Settings.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -3340,6 +3374,10 @@ pub struct Settings {
     /// Dark, Light, or the system's: the launcher's look. Dark by default.
     #[serde(default)]
     pub appearance: Appearance,
+    /// Horizon's own design language, or the Switch-inspired one (`LauncherLook`). Horizon by
+    /// default, so existing windows stay as they were.
+    #[serde(default, skip_serializing_if = "is_horizon_look")]
+    pub look: LauncherLook,
     /// The player has read what the "I'm playing" ping holds (`telemetry::PING`): on the
     /// first-run question, or on the Play page once if they answered that before it existed.
     #[serde(default)]
@@ -3395,6 +3433,10 @@ pub struct Settings {
     pub dev_offline: bool,
 }
 
+fn is_horizon_look(look: &LauncherLook) -> bool {
+    *look == LauncherLook::Horizon
+}
+
 impl Settings {
     pub fn load() -> Self {
         Self::parse(&fs::read_to_string(data_dir().join("settings.json")).unwrap_or_default())
@@ -3410,6 +3452,12 @@ impl Settings {
                 .is_some_and(|a| serde_json::from_value::<Appearance>(a.clone()).is_err())
             {
                 fields.remove("appearance");
+            }
+            if fields
+                .get("look")
+                .is_some_and(|a| serde_json::from_value::<LauncherLook>(a.clone()).is_err())
+            {
+                fields.remove("look");
             }
             if fields
                 .get("while_playing")
@@ -4168,6 +4216,20 @@ pub fn {f}("
         let text = serde_json::to_string(&settings).unwrap();
         assert!(text.contains(r#""appearance":"system""#), "{text}");
     }
+
+
+    #[test]
+    fn the_launcher_look_is_horizon_unless_picked() {
+        assert_eq!(Settings::parse("{}").look, LauncherLook::Horizon);
+        let switch = Settings::parse(r#"{"look": "switch"}"#);
+        assert_eq!(switch.look, LauncherLook::Switch);
+        let future = Settings::parse(r#"{"look": "home-menu", "game_args": "--x"}"#);
+        assert_eq!(
+            (future.look, future.game_args.as_str()),
+            (LauncherLook::Horizon, "--x")
+        );
+    }
+
 
     #[test]
     fn the_old_update_channel_settings_are_dropped_and_the_rest_kept() {

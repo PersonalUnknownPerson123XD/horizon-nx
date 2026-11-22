@@ -7,7 +7,7 @@
 //! The same [`Palette`] as the rest of the design system, so every text colour is held to the same
 //! WCAG AA contrast tests; `accent` is the focus frame's cyan (dark) or blue (light).
 
-use crate::Palette;
+use crate::{Palette, night::Night};
 
 /// The dark appearance: charcoal plates, white text, a cyan focus frame.
 pub const SWITCH_DARK: Palette = Palette {
@@ -67,6 +67,35 @@ pub fn glow(secs: f32) -> f32 {
     0.675 + 0.325 * phase.sin()
 }
 
+
+/// The launcher's night tokens in this look: a flat page (no sky), solid plates, and the same
+/// accent the overlays use for the focus frame. The window's layout is unchanged.
+pub const fn night(dark: bool) -> Night {
+    let p = palette(dark);
+    Night {
+        sky: [p.page; 6],
+        page: p.page,
+        side: p.plate_soft,
+        card: p.surface,
+        card_alpha: 1.0,
+        card_hi: p.plate,
+        card_hi_alpha: 1.0,
+        stroke: p.rule,
+        stroke_alpha: 1.0,
+        rule_alpha: 1.0,
+        ink: p.ink,
+        ink_soft: p.ink_soft,
+        muted: p.muted,
+        accent: p.accent,
+        accent_hi: p.accent,
+        on_accent: p.on_accent,
+        success: p.success,
+        warn: if dark { 0xf0c040 } else { 0x7a5000 },
+        danger: p.danger,
+        dark,
+    }
+}
+
 /// The palette for a console theme; `dark` is the system's setting.
 pub const fn palette(dark: bool) -> Palette {
     if dark { SWITCH_DARK } else { SWITCH_LIGHT }
@@ -105,6 +134,21 @@ mod tests {
         for i in 0..200 {
             let g = glow(i as f32 * 0.05);
             assert!((0.35..=1.0).contains(&g), "{g}");
+        }
+    }
+
+    #[test]
+    fn the_launcher_night_tokens_keep_text_readable() {
+        for dark in [true, false] {
+            let p = night(dark).blocks();
+            for bg in [p.page, p.side, p.panel, p.raised, p.button, p.well] {
+                for fg in [p.ink, p.ink_soft, p.muted, p.accent, p.danger, p.success, p.warn] {
+                    let ratio = contrast(fg, bg);
+                    assert!(ratio >= 4.5, "{fg:06x} on {bg:06x}: {ratio:.2}");
+                }
+            }
+            assert!(contrast(p.on_face, p.face) >= 4.5);
+            assert!(contrast(p.accent, p.page) >= 3.0);
         }
     }
 }

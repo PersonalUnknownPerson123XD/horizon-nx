@@ -183,6 +183,10 @@ impl Theme {
         }
     }
 
+    pub(crate) fn from_blocks(p: tokens::Blocks, night: Night) -> Self {
+        Self::from(p, night)
+    }
+
     fn from(p: tokens::Blocks, night: Night) -> Self {
         Self {
             look: tokens::glass::Glass::default_look(),

@@ -5,6 +5,21 @@ gilrs-core's Horizon backend) is the port's own: release 0.1.0 was built from it
 workshop. This recipe rebuilds that workshop from a checkout. It produced NROs that ran on a console
 (Atmosphère, November 2026) in the fork KoHaku743/horizon-nx, built on release 0.1.0's tree.
 
+
+## The Switch look (overlays and the desktop launcher)
+
+Horizon's own UI (not the vanilla game screens) can wear a Switch-inspired design language:
+flat rounded plates, a cyan (dark) or blue (light) focus frame, and a row of lettered button
+hints. The window's layout is unchanged: this is not a copy of the HOME menu, and it ships no
+Nintendo art. On the console the overlays follow the system's colour theme and, when it is
+available, the shared standard font the `pl` service maps into the process.
+
+- In the game, on the Switch, the on-screen keyboard uses this look by default. `overlayTheme`
+  in `horizon.txt` (or `HORIZON_OVERLAY_THEME`) can be `horizon`, `switch`, `switch-dark` or
+  `switch-light`.
+- In the desktop launcher, Settings → Look → Switch, or `HORIZON_LAUNCHER_LOOK=switch`. Dark and
+  Light still come from Appearance.
+
 ## Build
 
 ```sh

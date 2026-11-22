@@ -31,6 +31,7 @@ pub(super) struct Built {
     pub opening: Stateful<Div>,
     pub menu_entry: Stateful<Div>,
     pub appearance: AnyElement,
+    pub look: AnyElement,
     pub horizon: String,
     pub horizon_action: Option<AnyElement>,
     pub launcher: String,
@@ -349,6 +350,13 @@ impl Launcher {
                 tr("Appearance"),
                 note("Dark by default. System follows your computer's light or dark."),
                 Some(b.appearance),
+                &t,
+            ))
+            .child(index_row(
+                0,
+                tr("Look"),
+                note("Horizon is the launcher's own design. Switch keeps this layout and paints it in a flat, rounded language, with a cyan or blue focus and button hints at the bottom."),
+                Some(b.look),
                 &t,
             ))
             .child(self.glass_accent_row(cx))

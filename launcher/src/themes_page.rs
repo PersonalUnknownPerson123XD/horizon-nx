@@ -47,6 +47,19 @@ impl Launcher {
     /// The player's look; a launcher theme worn in the Wardrobe brings its own sky and accent.
     pub(super) fn settings_theme(&self, window: &Window) -> Theme {
         let worn = self.worn_theme();
+        if backend::LauncherLook::from_settings(self.settings.look) == backend::LauncherLook::Switch
+        {
+            // The Switch look keeps this window's layout and drops the glass scene: a flat page,
+            // rounded plates, cyan or blue accent. A wardrobe sky would fight the flat page, so
+            // it is left off while this look is on.
+            let system_dark = !matches!(
+                window.appearance(),
+                gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight
+            );
+            let dark = theme::pinned_dark(self.settings.appearance).unwrap_or(system_dark);
+            let night = horizon_theme::switch::night(dark);
+            return Theme::from_blocks(night.blocks(), night);
+        }
         let theme =
             Theme::for_appearance(self.settings.appearance, self.accent(), window.appearance())
                 .with_glass(self.settings.glass_tint(), self.settings.glass_blur());

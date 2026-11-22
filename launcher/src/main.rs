@@ -2595,6 +2595,74 @@ fn megabytes(bytes: u64) -> String {
 // ----- Pages -------------------------------------------------------------------------------------
 
 impl Launcher {
+
+    /// The Switch look is on (Settings, or `HORIZON_LAUNCHER_LOOK=switch`).
+    fn switch_look(&self) -> bool {
+        backend::LauncherLook::from_settings(self.settings.look) == backend::LauncherLook::Switch
+    }
+
+    /// A row of round button hints at the foot of the window: the Switch look's language, naming
+    /// what the face buttons usually do on this page. Clicks and keys are unchanged.
+    fn switch_hint_bar(&self) -> Div {
+        let t = self.theme;
+        let hints: &[(&str, &str)] = match self.page {
+            Page::Play => &[("A", "Play"), ("Y", "Settings"), ("X", "Account"), ("B", "Quit")],
+            Page::Versions => &[("A", "Select"), ("X", "Install"), ("B", "Back")],
+            Page::Mods => &[("A", "Open"), ("B", "Back")],
+            Page::Servers => &[("A", "Join"), ("X", "Add"), ("B", "Back")],
+            Page::Wardrobe => &[("A", "Wear"), ("B", "Back")],
+            Page::Notes => &[("A", "Open"), ("B", "Back")],
+            Page::Settings => &[("A", "Change"), ("B", "Back")],
+        };
+        let mut row = div().flex().items_center().justify_end().gap(px(16.));
+        for (glyph, label) in hints {
+            row = row.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .min_w(px(22.))
+                            .h(px(22.))
+                            .px(px(6.))
+                            .rounded(px(11.))
+                            .bg(t.plate)
+                            .border_1()
+                            .border_color(t.muted)
+                            .child(
+                                div()
+                                    .font_family(theme::FONT)
+                                    .text_size(px(11.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(t.ink)
+                                    .child(*glyph),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(t.ink_soft)
+                            .child(tr(*label).to_string()),
+                    ),
+            );
+        }
+        div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .w_full()
+            .h(px(40.))
+            .px(px(theme::PAGE_GUTTER))
+            .border_t_1()
+            .border_color(t.rule)
+            .bg(t.side)
+            .child(row)
+    }
+
     /// The top bar: the mark and name over the sidebar (in the title bar on Windows and Linux
     /// client-side decorations), the pages with their icons, then the account and Settings.
     /// The top bar over the pages: their tabs, then the account chip and Settings. No plate: the
@@ -3698,6 +3766,26 @@ impl Launcher {
                 }
             },
         );
+        let look = segments(
+            "look",
+            &[
+                (backend::LauncherLook::Horizon, "Horizon"),
+                (backend::LauncherLook::Switch, "Switch"),
+            ],
+            backend::LauncherLook::from_settings(self.settings.look),
+            &t,
+            {
+                let this = cx.entity().downgrade();
+                move |choice, window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.settings.look = choice;
+                        this.save_settings();
+                        this.theme = this.settings_theme(window);
+                        cx.notify();
+                    });
+                }
+            },
+        );
         if t.glass {
             return self.glass_settings(
                 glass_settings::Built {
@@ -3706,6 +3794,7 @@ impl Launcher {
                     opening,
                     menu_entry,
                     appearance: appearance.into_any_element(),
+                    look: look.into_any_element(),
                     horizon,
                     horizon_action,
                     launcher,
@@ -3765,6 +3854,15 @@ impl Launcher {
                         tr("Appearance"),
                         Some(plain("Dark by default. System follows your computer's light or dark.")),
                         Some(appearance.into_any_element()),
+                        &t,
+                    ))
+                    .child(index_row(
+                        n + 3,
+                        tr("Look"),
+                        Some(plain(
+                            "Horizon is the launcher's own design. Switch keeps this layout and paints it in a flat, rounded language, with a cyan or blue focus and button hints at the bottom.",
+                        )),
+                        Some(look.into_any_element()),
                         &t,
                     ))
                     .child(self.accent_row(cx))
@@ -5174,7 +5272,8 @@ impl Render for Launcher {
                                     )
                                     .flex_1()
                                     .min_h_0(),
-                            ),
+                            )
+                            .when(self.switch_look(), |d| d.child(self.switch_hint_bar())),
                     ),
             );
         root = root.children(row_menu);
