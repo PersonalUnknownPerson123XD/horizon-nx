@@ -19890,6 +19890,24 @@ impl Progress {
 
 /// Harness and dedicated runs keep the fully-synchronous startup so their
 /// output stays byte-identical; only an ordinary launch shows the window first.
+/// Loading diagnostics (`HORIZON_NX_LOAD_STATS=1` in env.txt, the Switch only): whether load
+/// and pack-reload steps log their times and what the SD card cost.
+pub(crate) fn load_stats() -> bool {
+    #[cfg(target_os = "horizon")]
+    return horizon_nx::load_stats::enabled();
+    #[cfg(not(target_os = "horizon"))]
+    false
+}
+
+/// With loading diagnostics on, a line on what the SD card cost since the last one: tells a load
+/// step that waits on the card from one that works the CPU. Nothing otherwise.
+pub(crate) fn log_sd_io() {
+    #[cfg(target_os = "horizon")]
+    if let Some(line) = horizon_nx::load_stats::report() {
+        log::info!("{line}");
+    }
+}
+
 fn synchronous_startup(options: &Options) -> bool {
     // A headless game has no window for the loading screen.
     options.headless
@@ -20225,6 +20243,7 @@ fn load_resources(
         root = vanilla_root.to_path_buf();
     };
     log::info!("load core tables: {:.2}s", started.elapsed().as_secs_f32());
+    log_sd_io();
     let CoreTables {
         assets,
         render,
@@ -20262,6 +20281,7 @@ fn load_resources(
     );
     drop(pack_step);
     log::info!("load pack tables: {:.2}s", started.elapsed().as_secs_f32());
+    log_sd_io();
     progress.set(4);
     if !menu {
         horizon_client::ui::load_metadata(&root);
@@ -20448,6 +20468,7 @@ fn load_world_rest(
     let load_items = || -> Result<_> {
         let items = startup::time("rest.items", || Items::load(root, registry, facts, overlay))?;
         log::info!("load items: {:.2}s", started.elapsed().as_secs_f32());
+        log_sd_io();
         progress.set(7);
         // The recipe tables, the stations and the recipe book read one folder:
         // hold its files so it is read once.

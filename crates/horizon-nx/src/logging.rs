@@ -92,7 +92,8 @@ pub(crate) mod ffi {
         pub fn mkdir(path: *const c_char, mode: c_int) -> c_int;
 
         /// newlib `sys/iosupport.h`: the device table, indexed by `NewlibHandle::device`.
-        pub static devoptab_list: [*const usize; STD_MAX];
+        /// `load_stats` replaces the SD card's slot (`HORIZON_NX_LOAD_STATS=1`).
+        pub static mut devoptab_list: [*const usize; STD_MAX];
         pub fn AddDevice(device: *const usize) -> c_int;
         pub fn __get_handle(fd: c_int) -> *mut NewlibHandle;
 

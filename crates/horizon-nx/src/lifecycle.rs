@@ -616,6 +616,10 @@ pub fn flush_logs() {
                     suspended.as_secs_f64()
                 );
             }
+            // HORIZON_NX_LOAD_STATS=1: what the SD card cost since the last line (load_stats.rs).
+            if let Some(line) = crate::load_stats::report() {
+                log::info!("{line}");
+            }
             // What the game asked the GPU to do per frame since the last beat, to tell geometry
             // that grows over a session from a GPU that only gets slower at the same work, and
             // what a frame waited for: the GPU (GPU-bound), a free image (display-bound), or

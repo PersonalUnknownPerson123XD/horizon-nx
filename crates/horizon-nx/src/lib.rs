@@ -32,6 +32,8 @@ mod clocks;
 #[cfg(target_os = "horizon")]
 mod keyboard;
 #[cfg(target_os = "horizon")]
+pub mod load_stats;
+#[cfg(target_os = "horizon")]
 mod main_stack;
 
 pub use compat::{
@@ -110,6 +112,8 @@ pub fn init() {
         compat::horizon_stubs::open_stamps_from_env();
         // Only with HORIZON_CPU_PROFILE set (profiler.rs).
         profiler::start_from_env();
+        // Only with HORIZON_NX_LOAD_STATS=1: the SD card timed for the log (load_stats.rs).
+        load_stats::install_from_env();
         // BH_ALLOC_CACHE=0 turns the allocator's small-block cache off.
         #[cfg(feature = "top_down_alloc")]
         allocator::configure_from_env();

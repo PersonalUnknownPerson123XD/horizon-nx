@@ -327,6 +327,18 @@ impl Game<'_> {
     /// The render-thread half: the renderer on the new pack's textures, then
     /// the swap (`ReloadInstance`'s application listeners).
     pub(super) fn apply_staged_pack(&mut self, staged: StagedPack) -> horizon_client::Result<()> {
+        let started = std::time::Instant::now();
+        let applied = self.apply_staged_pack_now(staged);
+        if super::load_stats() {
+            log::info!(
+                "Horizon: pack reload: applied on the render thread in {:.2} s",
+                started.elapsed().as_secs_f64()
+            );
+            super::log_sd_io();
+        }
+        applied
+    }
+    fn apply_staged_pack_now(&mut self, staged: StagedPack) -> horizon_client::Result<()> {
         let StagedPack {
             root,
             gui,
@@ -493,8 +505,11 @@ pub(super) fn stage_pack(
     japanese: bool,
     progress: &super::Progress,
 ) -> horizon_client::Result<StagedPack> {
+    let mut since = std::time::Instant::now();
     let root = startup_root(vanilla_root, selected, server)?;
+    reload_step("pack overlay", &mut since);
     let root = super::mods::content_root(&root, mods_enabled, dev_mods);
+    reload_step("mod content", &mut since);
     progress.set(1);
     // The world's models and sprites and the GUI atlas read the same root and nothing of
     // each other: about a second each, side by side.
@@ -523,6 +538,7 @@ pub(super) fn stage_pack(
                 .unwrap_or_else(|p| std::panic::resume_unwind(p)),
         )
     });
+    reload_step("models, sprites, menu atlas, panorama", &mut since);
     let render = Arc::new(render?);
     let mut atlas = atlas.unwrap_or_else(|p| std::panic::resume_unwind(p))?;
     atlas.font.uniform = force_unicode;
@@ -540,12 +556,15 @@ pub(super) fn stage_pack(
         context.biomes.clone(),
         context.light.clone(),
     )?;
+    reload_step("pack tables", &mut since);
     let textures = prepare_renderer_textures(&pack);
+    reload_step("texture mip chains", &mut since);
     let cem = Arc::new(horizon_client::mobs::cem::CemModels::load(
         &root,
         res.mob_types(),
     ));
     let block_entity_shapes = res.block_entity_render().shapes_for(&root);
+    reload_step("entity models", &mut since);
     progress.set(3);
     Ok(StagedPack {
         root,
@@ -558,6 +577,19 @@ pub(super) fn stage_pack(
         ui_metadata,
         language,
     })
+}
+
+/// With loading diagnostics on (`super::load_stats`), a pack reload step's time in the log, then
+/// what the SD card cost meanwhile. Nothing otherwise.
+fn reload_step(what: &str, since: &mut std::time::Instant) {
+    if super::load_stats() {
+        log::info!(
+            "Horizon: pack reload: {what} in {:.2} s",
+            since.elapsed().as_secs_f64()
+        );
+        super::log_sd_io();
+    }
+    *since = std::time::Instant::now();
 }
 
 /// Everything a pack reload builds on the CPU (`apply_staged_pack` finishes
