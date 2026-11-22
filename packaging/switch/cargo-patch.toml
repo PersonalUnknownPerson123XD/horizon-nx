@@ -18,6 +18,10 @@ socket2 = { path = "../third_party/socket2" }
 arboard = { path = "switch/stubs/arboard" }
 if-addrs = { path = "switch/stubs/if-addrs" }
 fs4 = { path = "switch/stubs/fs4" }
+# mimalloc needs mmap, which libnx lacks: stand-ins over the system heap, which horizon-nx backs
+# with its TLSF heap. This file's patch wins over the root Cargo.toml's libmimalloc-sys one.
+mimalloc = { path = "switch/stubs/mimalloc" }
+libmimalloc-sys = { path = "switch/stubs/libmimalloc-sys" }
 
 # `-z notext`, as bevy-horizon's examples pass from their build.rs (text relocations are kept).
 [target.aarch64-nintendo-horizon]

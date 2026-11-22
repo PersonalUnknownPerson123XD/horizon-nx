@@ -1,0 +1,22 @@
+[package]
+# Same name and version as the crate it stands in for: packaging/switch/cargo-patch.toml patches it
+# in for the Switch build only.
+name = "libmimalloc-sys"
+version = "0.1.49"
+edition = "2021"
+license = "MIT"
+description = "The Switch build's stand-in for libmimalloc-sys: the few calls the game makes, over the system heap."
+publish = false
+
+[features]
+default = []
+arena = []
+debug = []
+debug_in_debug = []
+extended = []
+local_dynamic_tls = []
+no_thp = []
+override = []
+secure = []
+v2 = []
+win_direct_tls = []

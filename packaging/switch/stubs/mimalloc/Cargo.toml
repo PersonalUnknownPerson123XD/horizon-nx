@@ -1,0 +1,21 @@
+[package]
+# Same name and version as the crate it stands in for: packaging/switch/cargo-patch.toml patches it
+# in for the Switch build only.
+name = "mimalloc"
+version = "0.1.52"
+edition = "2021"
+license = "MIT"
+description = "The Switch build's stand-in for mimalloc: the system heap (newlib's, which horizon-nx backs with its TLSF heap). mimalloc needs mmap, which libnx lacks."
+publish = false
+
+[features]
+default = []
+debug = []
+debug_in_debug = []
+extended = []
+local_dynamic_tls = []
+no_thp = []
+override = []
+secure = []
+v2 = []
+win_direct_tls = []
