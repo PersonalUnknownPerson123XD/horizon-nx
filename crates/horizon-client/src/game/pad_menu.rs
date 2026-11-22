@@ -110,6 +110,8 @@ pub(super) struct MenuCursor {
     /// new screen's first drawn frame.
     key_screen: u64,
     key_restart: Option<u64>,
+    /// A tap went down on the keyboard: its release is the keyboard's too.
+    osk_tapped: bool,
 }
 
 impl MenuCursor {
@@ -126,7 +128,12 @@ impl MenuCursor {
 impl MenuCursor {
     /// The startup title's pad state, carried into the game at the handoff so the
     /// focus stays where it was (`startup_menu.rs`).
-    pub(super) fn carry(&mut self, focus: Option<Target>, pos: Option<(f32, f32)>, os_hidden: bool) {
+    pub(super) fn carry(
+        &mut self,
+        focus: Option<Target>,
+        pos: Option<(f32, f32)>,
+        os_hidden: bool,
+    ) {
         self.focus = focus;
         self.pos = pos;
         self.os_hidden = os_hidden;
@@ -152,7 +159,10 @@ pub(super) fn pointer_moved(batch: &HudBatch, at: (f32, f32)) -> WindowEvent {
     );
     WindowEvent::CursorMoved {
         device_id: DeviceId::dummy(),
-        position: PhysicalPosition::new(f64::from(at.0 * batch.scale), f64::from(at.1 * batch.scale)),
+        position: PhysicalPosition::new(
+            f64::from(at.0 * batch.scale),
+            f64::from(at.1 * batch.scale),
+        ),
     }
 }
 
@@ -1575,6 +1585,52 @@ impl Game<'_> {
         }
     }
 
+    /// The keyboard sits at the top when the field it types into is in the lower half, and over
+    /// chat, whose box and messages are at the bottom.
+    fn osk_at_top(&self, height: f32) -> bool {
+        self.pad
+            .menu
+            .focus
+            .is_some_and(|f| f.center().1 > height / 2.0)
+            || self.screen == Screen::Chat
+    }
+
+    /// A left button (a tap on the touch screen is one) while the keyboard is open: a press on
+    /// the keyboard types the key under it, and it and its release are the keyboard's (true).
+    /// A press elsewhere goes to the screen under it as usual, so chat's clickable messages
+    /// (a server's "click here") still work while typing.
+    pub(super) fn pad_osk_pointer(&mut self, pressed: bool) -> bool {
+        if !pressed {
+            return std::mem::take(&mut self.pad.menu.osk_tapped);
+        }
+        // The keyboard is laid out in a Ui's units, not GUI pixels (`draw_pad_cursor`).
+        let size = self
+            .renderer
+            .as_ref()
+            .map_or([1280, 720], |r| [r.config.width, r.config.height]);
+        let batch = HudBatch::new(size);
+        let at_top = self.osk_at_top(batch.height);
+        let (w, h, (x, y), _) = horizon_client::ui_theme::Ui::space(
+            batch.width,
+            batch.height,
+            batch.scale,
+            self.cursor,
+        );
+        let Some(keyboard) = self.pad.menu.osk.as_mut() else {
+            return false;
+        };
+        match keyboard.tap(x, y, w, h, at_top) {
+            osk::Tap::Outside => false,
+            osk::Tap::Inside(out) => {
+                self.pad.menu.osk_tapped = true;
+                if let Some(out) = out {
+                    self.pad_osk_output(out);
+                }
+                true
+            }
+        }
+    }
+
     // ---- drawing ----
 
     /// The pad's cursor (pointer mode) or focus highlight (focus mode), and
@@ -1584,12 +1640,7 @@ impl Game<'_> {
             return;
         }
         if let Some(keyboard) = &self.pad.menu.osk {
-            let at_top = self
-                .pad
-                .menu
-                .focus
-                .is_some_and(|f| f.center().1 > batch.height / 2.0)
-                || self.screen == Screen::Chat;
+            let at_top = self.osk_at_top(batch.height);
             let mut ui = horizon_client::ui_theme::Ui::new(&self.gui.atlas, batch, self.cursor);
             let options = &self.ui.options;
             keyboard.draw(&mut ui, at_top, options.pad_style, options.pad_by_letter);

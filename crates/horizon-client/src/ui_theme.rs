@@ -307,18 +307,35 @@ impl<'a> Ui<'a> {
     /// `cursor` is in GUI pixels, like every screen's input.
     pub fn new(atlas: &'a HudAtlas, batch: &'a mut HudBatch, cursor: (f32, f32)) -> Self {
         let scale = batch.scale;
-        let (pw, ph) = (batch.width * scale, batch.height * scale);
-        let density = (pw / 1040.0).min(ph / 700.0).clamp(1.0, 4.0);
+        let (w, h, cursor, density) = Self::space(batch.width, batch.height, scale, cursor);
         Self {
             atlas,
-            w: pw / density,
-            h: ph / density,
-            cursor: (cursor.0 * scale / density, cursor.1 * scale / density),
+            w,
+            h,
+            cursor,
             density,
             scale,
             batch,
         }
     }
+    /// The Ui's own size and a GUI-pixel point in it, for a GUI `width` by `height` at `scale`:
+    /// (w, h, point, density). A Ui lays out in these units, not in GUI pixels.
+    pub fn space(
+        width: f32,
+        height: f32,
+        scale: f32,
+        at: (f32, f32),
+    ) -> (f32, f32, (f32, f32), f32) {
+        let (pw, ph) = (width * scale, height * scale);
+        let density = (pw / 1040.0).min(ph / 700.0).clamp(1.0, 4.0);
+        (
+            pw / density,
+            ph / density,
+            (at.0 * scale / density, at.1 * scale / density),
+            density,
+        )
+    }
+
     /// Move rasterized glyphs into the batch's atlas uploads (real frames only).
     pub fn finish(self) {
         let pending = with_cache(self.atlas, |c| std::mem::take(&mut c.pending));

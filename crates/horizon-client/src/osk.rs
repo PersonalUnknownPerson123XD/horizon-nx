@@ -2,6 +2,7 @@
 //! own; docs/controllers.md, "Text fields"): a QWERTY grid and a symbols
 //! grid in Horizon's design language, moved over with the D-pad or stick.
 //! A types the key, X deletes, Y is a space, Start is Enter, B closes it.
+//! A tap on a key (the touch screen, or a click) types it too ([`Keyboard::tap`]).
 //! It only produces [`Output`]s; the game feeds them to the focused field
 //! the way typed keys reach it.
 use crate::gamepad::{Button, GlyphStyle};
@@ -148,6 +149,40 @@ const SYMBOLS: [Row; 5] = [
     BOTTOM,
 ];
 
+/// Where the keyboard sits on a GUI `w` by `h` pixels: its keys' grid (`x0`, `y0`, `width`) and the
+/// plate around it (`plate`: x, y, width, height).
+struct Layout {
+    x0: f32,
+    y0: f32,
+    width: f32,
+    plate: (f32, f32, f32, f32),
+}
+const UNIT: f32 = 50.0;
+const GAP: f32 = 6.0;
+const KEY_H: f32 = 38.0;
+
+fn layout(w: f32, h: f32, at_top: bool) -> Layout {
+    let width = 10.0 * UNIT + 9.0 * GAP;
+    let height = 5.0 * KEY_H + 4.0 * GAP + 24.0 + 30.0;
+    let x0 = ((w - width) / 2.0).round();
+    let y0 = if at_top { 16.0 } else { h - height - 16.0 };
+    Layout {
+        x0,
+        y0,
+        width,
+        plate: (x0 - 12.0, y0 - 12.0, width + 24.0, height),
+    }
+}
+
+/// What a tap did ([`Keyboard::tap`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Tap {
+    /// Outside the keyboard: the screen under it takes the tap (chat's clickable messages).
+    Outside,
+    /// On the keyboard: on a key (typed, with what it gives the field) or between keys (nothing).
+    Inside(Option<Output>),
+}
+
 /// The keyboard's state while open.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Keyboard {
@@ -245,6 +280,33 @@ impl Keyboard {
             Key::Done => Some(Output::Enter),
         }
     }
+    /// A tap at (`x`, `y`) on a GUI `w` by `h` pixels, the keyboard drawn as [`Keyboard::draw`]
+    /// draws it: a key under it gets focus and is typed, as A types the focused key.
+    pub fn tap(&mut self, x: f32, y: f32, w: f32, h: f32, at_top: bool) -> Tap {
+        let l = layout(w, h, at_top);
+        let (px, py, pw, ph) = l.plate;
+        if x < px || x >= px + pw || y < py || y >= py + ph {
+            return Tap::Outside;
+        }
+        for (r, row) in self.rows().iter().enumerate() {
+            let top = l.y0 + r as f32 * (KEY_H + GAP);
+            if y < top || y >= top + KEY_H {
+                continue;
+            }
+            for (i, (_, units)) in row.iter().enumerate() {
+                let (left, _) = Self::span(row, i);
+                let kx = l.x0 + left * (UNIT + GAP);
+                let kw = units * UNIT + (units - 1.0) * GAP;
+                if x >= kx && x < kx + kw {
+                    self.row = r;
+                    self.col = i;
+                    return Tap::Inside(self.press());
+                }
+            }
+        }
+        Tap::Inside(None)
+    }
+
     /// A pad button while the keyboard is open; `None` when it does nothing
     /// to the field (moving, Shift).
     pub fn button(&mut self, button: Button) -> Option<Output> {
@@ -275,29 +337,21 @@ impl Keyboard {
     /// the field it types into is in the lower half. `by_letter`: the pad goes by its letters
     /// and the glyphs are Nintendo's, so a hint names the button playing its part.
     pub fn draw(&self, ui: &mut Ui, at_top: bool, glyphs: GlyphStyle, by_letter: bool) {
-        const UNIT: f32 = 50.0;
-        const GAP: f32 = 6.0;
-        const KEY_H: f32 = 38.0;
-        let width = 10.0 * UNIT + 9.0 * GAP;
-        let height = 5.0 * KEY_H + 4.0 * GAP + 24.0 + 30.0;
-        let x0 = ((ui.w - width) / 2.0).round();
-        let y0 = if at_top { 16.0 } else { ui.h - height - 16.0 };
+        let Layout {
+            x0,
+            y0,
+            width,
+            plate: (px, py, pw, ph),
+        } = layout(ui.w, ui.h, at_top);
         ui.rounded(
-            x0 - 12.0,
-            y0 - 12.0,
-            width + 24.0,
-            height,
+            px,
+            py,
+            pw,
+            ph,
             ui_theme::RADIUS_PLATE,
             color::with_alpha(color::BG, 0.94),
         );
-        ui.border(
-            x0 - 12.0,
-            y0 - 12.0,
-            width + 24.0,
-            height,
-            ui_theme::RADIUS_PLATE,
-            color::BORDER,
-        );
+        ui.border(px, py, pw, ph, ui_theme::RADIUS_PLATE, color::BORDER);
         for (r, row) in self.rows().iter().enumerate() {
             let y = y0 + r as f32 * (KEY_H + GAP);
             for (i, (key, units)) in row.iter().enumerate() {
@@ -376,6 +430,31 @@ mod tests {
                 assert_eq!(units, 10.0);
             }
         }
+    }
+
+    #[test]
+    fn a_tap_types_the_key_under_it_and_leaves_the_rest_to_the_screen() {
+        let (w, h) = (1280.0, 720.0);
+        let mut k = Keyboard::default();
+        let l = layout(w, h, true);
+        // `w`, the second key of the second row.
+        let x = l.x0 + 1.0 * (UNIT + GAP) + UNIT / 2.0;
+        let y = l.y0 + (KEY_H + GAP) + KEY_H / 2.0;
+        assert_eq!(
+            k.tap(x, y, w, h, true),
+            Tap::Inside(Some(Output::Text("w".into())))
+        );
+        // Done, the last key of the bottom row.
+        let y = l.y0 + 4.0 * (KEY_H + GAP) + KEY_H / 2.0;
+        assert_eq!(
+            k.tap(l.x0 + l.width - 10.0, y, w, h, true),
+            Tap::Inside(Some(Output::Enter))
+        );
+        // Between rows: on the plate, nothing typed.
+        let y = l.y0 + KEY_H + GAP / 2.0;
+        assert_eq!(k.tap(x, y, w, h, true), Tap::Inside(None));
+        // Under the keyboard: chat's messages.
+        assert_eq!(k.tap(x, h - 40.0, w, h, true), Tap::Outside);
     }
 
     #[test]
