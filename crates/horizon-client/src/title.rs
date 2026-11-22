@@ -887,6 +887,7 @@ impl Mode {
             Self::Onboarding(_) => "onboarding",
             Self::BanNotice(_) => "ban_notice",
             Self::ConfirmUpdate { .. } => "switch_update",
+            Self::Account => "account",
         }
     }
 }
@@ -2585,6 +2586,10 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 let (title, message) = update_question(*build);
                 ScreenInfo::new("switch_update", join(&[&title, &message]))
             }
+            Mode::Account => ScreenInfo::new(
+                "account",
+                get("horizon.account.title", "Microsoft Account"),
+            ),
             Mode::Delete { world } => ScreenInfo::new(
                 "delete_world",
                 join(&[
