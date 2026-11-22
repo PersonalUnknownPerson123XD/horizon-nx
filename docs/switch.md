@@ -73,3 +73,36 @@ published; the ones here were written to the same crate versions `Cargo.lock` na
 the game's code expects of them. Expect differences on a console, first of all in: suspending and
 resuming (HOME, sleep), the touch screen, hosting a LAN world and Play with Friends (mio's waker,
 socket2), docked resolution changes.
+
+## SD card layout
+
+The Switch build never bundles or downloads Minecraft's files. Copy your own Java Edition 26.3 files onto the SD card, then start `horizon.nro`. First-run setup looks in the NRO's folder for a prepared tree, a `client.jar`, or a copied `.minecraft` / `minecraft` folder.
+
+```
+sdmc:/switch/horizon/
+  horizon.nro
+  client.txt                  # required so the NRO runs as a client
+  env.txt                     # optional
+  args.txt                    # optional extra launch tokens
+  horizon-player.txt          # offline nickname (written by the game)
+  offline-profile.json        # offline name + UUID (written by the game)
+  account.json                # only after optional Microsoft sign-in
+  options.txt
+  saves/
+  resources/                  # preferred: prepared Horizon output
+    horizon-resources.json
+    block-tags.json
+    horizon-prepare.json
+    ...
+  client.jar                  # optional: your own client jar
+  minecraft/                  # optional: a copy of .minecraft
+    versions/26.3/26.3.jar
+    assets/
+  .minecraft/                 # accepted under this name too
+```
+
+A prepared `resources/` folder is what actually starts the game: run Horizon's desktop launcher, or `horizon-prepare --prepare`, with your own Java Edition 26.3, then copy that output here. `client.jar` or a `.minecraft` copy alone is not enough (the Java exporters that build Horizon's tables do not run on the Switch). The first-run screen reports what it found and asks you to copy the prepared folder; **Scan again** then **Start**.
+
+The title screen's Account page is the main way to play: pick a nickname (on-screen keyboard or the system keyboard) and **Play offline**. That name and its vanilla offline UUID (`OfflinePlayer:<name>`) are used in singleplayer and on offline-mode servers. Microsoft sign-in remains optional for online-mode servers and does not download game files.
+
+Other recognized locations for a prepared tree, searched automatically: `resources/`, `prepared/`, `.local/horizon-client/26.3/`, or any folder within three levels of the NRO that contains a valid `horizon-resources.json` (data version 5023).

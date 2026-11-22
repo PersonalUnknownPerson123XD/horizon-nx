@@ -585,7 +585,7 @@ impl Game<'_> {
         })
     }
     pub(super) fn player_team(&self) -> Option<&sb::Team> {
-        self.score.board.players_team(self.acting_player_name())
+        self.score.board.players_team(&self.acting_player_name())
     }
     /// The teams of the player and of the mobs on one (empty without teams).
     pub(super) fn mob_teams(&self) -> horizon_client::mobs::Teams<'_> {
@@ -625,7 +625,7 @@ impl Game<'_> {
     }
     /// `Player.getDisplayName`: the name with the team's prefix, suffix and colour.
     pub(super) fn player_display_comp(&self) -> Comp {
-        let name = literal(self.acting_player_name());
+        let name = literal(&self.acting_player_name());
         match self.player_team() {
             Some(t) => t.formatted_name_comp(&name),
             None => name,
@@ -900,7 +900,7 @@ impl Env for GameEnv<'_, '_> {
             .collect()
     }
     fn named(&mut self, name: &str) -> Holder {
-        if name.eq_ignore_ascii_case(self.g.acting_player_name()) && self.g.player.is_some() {
+        if name.eq_ignore_ascii_case(&self.g.acting_player_name()) && self.g.player.is_some() {
             return self
                 .g
                 .holder_for(Target::Player)

@@ -635,6 +635,13 @@ impl Options {
                 eprintln!("Quick play: there is no world {world} in saves/");
             }
         }
+        // Offline nickname (or the name already chosen above) is the play
+        // identity for singleplayer and offline-mode servers.
+        let name = o.player_name();
+        horizon_client::offline_name::set_current(name.clone());
+        if o.player_name.is_none() {
+            o.player_name = Some(name);
+        }
         Ok(Some(o))
     }
     /// The command line alone: no file is read and nothing changes. `None` for `--help` and
@@ -651,6 +658,10 @@ impl Options {
                 romfs.to_path_buf()
             } else if sibling.join("horizon-resources.json").exists() {
                 sibling
+            } else if let Some(found) = horizon_client::switch_setup::find_prepared(
+                &horizon_client::switch_setup::search_bases(&exe_dir, None),
+            ) {
+                found
             } else {
                 std::path::Path::new(".local/horizon-client").join(horizon_core::VANILLA_VERSION)
             },
@@ -21474,11 +21485,13 @@ fn missing_resources(root: &std::path::Path) -> Option<String> {
     let shown = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
     Some(format!(
         "Horizon's prepared game files are missing: no horizon-resources.json in {}\n\
-         Horizon is started from its launcher: download it at {} (Download). It needs your \
-         own Minecraft: Java Edition; the launcher signs you in and prepares the game files.\n\
+         Copy your own prepared folder (from Horizon's desktop launcher, or horizon-prepare \
+         --prepare with Java Edition {}) to switch/horizon/resources/, or place client.jar / \
+         a copy of your .minecraft folder next to the game and use first-run setup. Horizon \
+         does not download Minecraft's files.\n\
          Developers: horizon-prepare --prepare, or pass --resources <folder>",
         shown.display(),
-        horizon_client::no_resources::DOWNLOAD_URL
+        horizon_core::VANILLA_VERSION
     ))
 }
 
@@ -21610,18 +21623,35 @@ pub fn run_with() -> Result<()> {
     {
         horizon_client::spans::record_here(true);
     }
-    let vanilla_root = options.resources.clone();
+    let mut vanilla_root = options.resources.clone();
+    let setup_bases = horizon_client::switch_setup::search_bases(
+        &exe_dir().unwrap_or_default(),
+        None,
+    );
+    if missing_resources(&vanilla_root).is_some() {
+        if let Some(found) = horizon_client::switch_setup::find_prepared(&setup_bases) {
+            vanilla_root = found;
+        }
+    }
     if let Some(error) = missing_resources(&vanilla_root) {
-        // The game build started by hand (the release's zip), not by the
-        // launcher: a window says where to get it. Scripts and servers get
-        // the error.
+        // The game started without prepared files: first-run setup looks for
+        // the player's own copy on the SD card (or beside the binary).
+        // Scripts and servers get the error.
         if !options.offscreen && !synchronous_startup(&options) {
             log::error!("Horizon: {error}");
             let settings = Settings::load(&Game::options_path());
-            return no_resources::show(&vanilla_root, &settings);
+            match no_resources::show(&vanilla_root, &setup_bases, &settings)? {
+                Some(path) => vanilla_root = path,
+                None => return Ok(()),
+            }
+            if let Some(error) = missing_resources(&vanilla_root) {
+                return Err(error.into());
+            }
+        } else {
+            return Err(error.into());
         }
-        return Err(error.into());
     }
+    options.resources = vanilla_root.clone();
     // Someone is playing: the anonymous ping behind the launcher's "N playing now", and the
     // official server in their list (servers.dat in the game folder, the working directory). Not
     // for a server, a benchmark, a run that quits by itself, a harness's fixture or a run that

@@ -1,9 +1,9 @@
-//! A game started without its prepared files (the game build run by hand, not
-//! through the launcher): a window that says where to get the launcher
-//! (`horizon_client::no_resources`) and quits when it is closed. No loader, no
-//! crash report: nothing went wrong in the game.
+//! First-run setup when Horizon starts without its prepared game files: a
+//! window that looks for the player's own files on the SD card (or beside the
+//! binary), says what is missing, and starts the game once a prepared folder
+//! is in place. No loader, no crash report: nothing went wrong in the game.
 use super::*;
-use horizon_client::no_resources::{Action, DOWNLOAD_URL, NoResources};
+use horizon_client::no_resources::{Action, NoResources};
 use winit::event::MouseButton;
 
 struct Missing {
@@ -15,10 +15,17 @@ struct Missing {
     pointer: (f64, f64),
     api: horizon_client::graphics::GraphicsApi,
     error: Option<Box<dyn std::error::Error>>,
+    /// `Some(None)` the player quit; `Some(Some(path))` the files are ready.
+    outcome: Option<Option<std::path::PathBuf>>,
 }
 
-/// Shows the screen until the player closes it.
-pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<()> {
+/// Shows the screen until the player starts the game or closes it.
+/// `Ok(Some(path))` is the prepared-resource folder to use; `Ok(None)` is Quit.
+pub(super) fn show(
+    looked_in: &std::path::Path,
+    bases: &[std::path::PathBuf],
+    settings: &Settings,
+) -> Result<Option<std::path::PathBuf>> {
     let mut app = Missing {
         window: None,
         renderer: None,
@@ -26,14 +33,18 @@ pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<(
             atlas: HudAtlas::build(looked_in)?,
             panorama: Arc::new(horizon_client::gfx::panorama::Faces::colour([0; 4])),
         },
-        screen: NoResources::new(looked_in),
+        screen: NoResources::new(looked_in, bases.to_vec()),
         pointer: (0.0, 0.0),
         api: settings.horizon.api,
         error: None,
+        outcome: None,
     };
     horizon_client::hud::GUI_SCALE.store(settings.gui_scale, Ordering::Relaxed);
     EventLoop::new()?.run_app(&mut app)?;
-    app.error.map_or(Ok(()), Err)
+    if let Some(e) = app.error {
+        return Err(e);
+    }
+    Ok(app.outcome.unwrap_or(None))
 }
 
 impl Missing {
@@ -78,12 +89,50 @@ impl Missing {
         }
     }
 
+    fn apply(&mut self, action: Action, event_loop: &ActiveEventLoop) {
+        match action {
+            Action::Start => {
+                self.outcome = Some(self.screen.take_ready_path());
+                event_loop.exit();
+            }
+            Action::Scan => {
+                self.screen.rescan();
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            Action::Quit => {
+                self.outcome = Some(None);
+                event_loop.exit();
+            }
+        }
+    }
+
     fn click(&mut self, event_loop: &ActiveEventLoop) {
         let mut batch = HudBatch::new(self.size());
-        match self.with_ui(&mut batch, |ui| self.screen.click(ui)) {
-            Some(Action::Download) => packs::open_uri(DOWNLOAD_URL),
-            Some(Action::Quit) => event_loop.exit(),
-            None => {}
+        if let Some(action) = self.with_ui(&mut batch, |ui| self.screen.click(ui)) {
+            self.apply(action, event_loop);
+        }
+    }
+
+    fn confirm(&mut self, event_loop: &ActiveEventLoop) {
+        let mut batch = HudBatch::new(self.size());
+        if let Some(action) = self.with_ui(&mut batch, |ui| self.screen.confirm(ui)) {
+            self.apply(action, event_loop);
+        }
+    }
+
+    fn move_focus(&mut self, dir: i32) {
+        let mut batch = HudBatch::new(self.size());
+        let cursor = (
+            self.pointer.0 as f32 / batch.scale,
+            self.pointer.1 as f32 / batch.scale,
+        );
+        let mut ui = horizon_client::ui_theme::Ui::new(&self.gui.atlas, &mut batch, cursor);
+        self.screen.move_focus(dir, &ui);
+        ui.finish();
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 }
@@ -130,7 +179,7 @@ impl ApplicationHandler for Missing {
             return;
         };
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => { self.outcome = Some(None); event_loop.exit(); }
             WindowEvent::Resized(size) => {
                 if let Some(r) = &mut self.renderer {
                     r.resize(size.width, size.height);
@@ -148,10 +197,24 @@ impl ApplicationHandler for Missing {
                 ..
             } => self.click(event_loop),
             WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed
-                    && event.physical_key == PhysicalKey::Code(KeyCode::Escape) =>
+                if event.state == ElementState::Pressed =>
             {
-                event_loop.exit()
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Escape) => {
+                        self.outcome = Some(None);
+                        event_loop.exit();
+                    }
+                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space) => {
+                        self.confirm(event_loop);
+                    }
+                    PhysicalKey::Code(KeyCode::Tab | KeyCode::ArrowRight | KeyCode::ArrowDown) => {
+                        self.move_focus(1);
+                    }
+                    PhysicalKey::Code(KeyCode::ArrowLeft | KeyCode::ArrowUp) => {
+                        self.move_focus(-1);
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         }

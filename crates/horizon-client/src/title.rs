@@ -210,6 +210,7 @@ const ACCOUNT_SIGN_IN: u8 = 120;
 const ACCOUNT_SIGN_OUT: u8 = 121;
 const ACCOUNT_CANCEL: u8 = 122;
 const ACCOUNT_BACK: u8 = 123;
+const ACCOUNT_PLAY_OFFLINE: u8 = 124;
 
 /// Whether the title offers the Microsoft account button: on the Switch, where no launcher signs
 /// in (`HORIZON_ACCOUNT_BUTTON=1` shows it elsewhere, to try it).
@@ -287,13 +288,22 @@ fn account_lines(sign_in: Option<&crate::msa::State>) -> (Vec<(String, u32)>, bo
                 false,
             ),
             None => (
-                vec![(
-                    lang::get_or(
-                        "horizon.account.signed_out",
-                        "Sign in with the Microsoft account that owns Minecraft: Java Edition to play on online servers as yourself. Your sign-in is kept on the SD card until you sign out.",
+                vec![
+                    (
+                        lang::get_or(
+                            "horizon.account.offline.title",
+                            "Play offline with a nickname. This is the name used in singleplayer and on offline-mode servers.",
+                        ),
+                        white,
                     ),
-                    white,
-                )],
+                    (
+                        lang::get_or(
+                            "horizon.account.offline.hint",
+                            "Microsoft sign-in is optional, only for online-mode servers. Horizon does not download game files.",
+                        ),
+                        grey,
+                    ),
+                ],
                 false,
             ),
         },
@@ -623,6 +633,11 @@ pub struct Title {
     reopen_data_packs: bool,
     /// The account screen's sign-in under way (`msa`); dropping it cancels it.
     sign_in: Option<crate::msa::SignIn>,
+    /// Offline nickname on the account screen (horizon-player.txt).
+    offline_name: String,
+    offline_name_focused: bool,
+    /// Shown under the nickname field when the typed name is not valid.
+    offline_name_error: Option<String>,
 }
 pub(crate) struct Button {
     x: f32,
@@ -936,6 +951,10 @@ impl Title {
         );
         let mode = Mode::Main;
         let now = std::time::Instant::now();
+        let offline_name = saves
+            .parent()
+            .and_then(crate::offline_name::load)
+            .unwrap_or_else(crate::offline_name::current);
         Self {
             mode,
             last_server: String::new(),
@@ -975,6 +994,9 @@ impl Title {
             preparing: false,
             reopen_data_packs: false,
             sign_in: None,
+            offline_name,
+            offline_name_focused: false,
+            offline_name_error: None,
         }
     }
     /// The account screen's Cancel: a sign-in under way stops, and it neither keeps nor saves
@@ -991,6 +1013,67 @@ impl Title {
             }
         }
     }
+    fn game_dir(&self) -> Option<&std::path::Path> {
+        self.saves.parent()
+    }
+
+    fn reload_offline_name(&mut self) {
+        self.offline_name = self
+            .game_dir()
+            .and_then(crate::offline_name::load)
+            .unwrap_or_else(crate::offline_name::current);
+        if self.offline_name == "Player" {
+            // A placeholder until the player types a nickname: leave the box
+            // empty so the field's hint is visible.
+            if self
+                .game_dir()
+                .and_then(crate::offline_name::load)
+                .is_none()
+            {
+                self.offline_name.clear();
+            }
+        }
+        self.offline_name_error = None;
+        self.offline_name_focused = true;
+    }
+
+    /// Keep a valid nickname in horizon-player.txt and as the process identity.
+    fn commit_offline_name(&mut self) -> bool {
+        let name = self.offline_name.trim().to_owned();
+        self.offline_name = name.clone();
+        if !crate::offline_name::is_valid(&name) {
+            self.offline_name_error = Some(lang::get_or(
+                "horizon.account.offline.invalid",
+                "Use 1 to 16 characters, no spaces.",
+            ));
+            return false;
+        }
+        if let Some(dir) = self.game_dir() {
+            if let Err(e) = crate::offline_name::save(dir, &name) {
+                self.offline_name_error = Some(format!("Could not save the nickname: {e}"));
+                return false;
+            }
+        } else {
+            crate::offline_name::set_current(name);
+        }
+        self.offline_name_error = None;
+        true
+    }
+
+    fn open_account(&mut self) {
+        self.sign_in = None;
+        self.focused_button = None;
+        self.reload_offline_name();
+        self.mode = Mode::Account;
+    }
+
+    fn account_name_rect(w: f32, h: f32, message_lines: usize) -> [f32; 4] {
+        let x = (w / 2.0).floor() - 100.0;
+        let top = confirm_top(h, message_lines);
+        let y = top + 17.0 + message_lines as f32 * 9.0 + 6.0;
+        [x, y, 200.0, 20.0]
+    }
+
     /// Vanilla bypasses the selector when there are no saves.
     pub fn enter_singleplayer(&mut self) {
         self.search.clear();
@@ -1973,7 +2056,8 @@ impl Title {
                 if account_button_shown() {
                     let label = match crate::auth::current() {
                         Some(session) => session.name.clone(),
-                        None => lang::get_or("horizon.account.button", "Sign In"),
+                        None if !self.offline_name.is_empty() => self.offline_name.clone(),
+                        None => lang::get_or("horizon.account.button", "Account"),
                     };
                     buttons.push(b(cx + 2.0, y + 48.0, 98.0, &label, true, ACCOUNT));
                 }
@@ -2182,9 +2266,8 @@ impl Title {
                 ]
             }
             Mode::Account => {
-                let y = confirm_top(h, self.message_lines.get())
-                    + 41.0
-                    + self.message_lines.get() as f32 * 9.0;
+                let name_y = Title::account_name_rect(w, h, self.message_lines.get())[1];
+                let y = name_y + 20.0 + 12.0;
                 let state = self.sign_in.as_ref().map(crate::msa::SignIn::state);
                 let (_, busy) = account_lines(state.as_ref());
                 let (cx, left, right) = (
@@ -2222,16 +2305,24 @@ impl Title {
                     ]
                 } else {
                     let again = matches!(state, Some(crate::msa::State::Failed(_)));
-                    let label = if again {
+                    let sign = if again {
                         lang::get_or("horizon.account.retry", "Try Again")
                     } else {
                         lang::get_or("horizon.account.sign_in", "Sign In")
                     };
                     vec![
-                        b(left, y, 150.0, &label, true, ACCOUNT_SIGN_IN),
+                        b(
+                            cx - 100.0,
+                            y,
+                            200.0,
+                            &lang::get_or("horizon.account.play_offline", "Play offline"),
+                            true,
+                            ACCOUNT_PLAY_OFFLINE,
+                        ),
+                        b(left, y + 24.0, 150.0, &sign, true, ACCOUNT_SIGN_IN),
                         b(
                             right,
-                            y,
+                            y + 24.0,
                             150.0,
                             &lang::get_or("gui.back", "Back"),
                             true,
@@ -2588,7 +2679,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             }
             Mode::Account => ScreenInfo::new(
                 "account",
-                get("horizon.account.title", "Microsoft Account"),
+                get("horizon.account.title", "Account"),
             ),
             Mode::Delete { world } => ScreenInfo::new(
                 "delete_world",
@@ -3279,12 +3370,49 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 centered(
                     atlas,
                     batch,
-                    &lang::get_or("horizon.account.title", "Microsoft Account"),
+                    &lang::get_or("horizon.account.title", "Account"),
                     top,
                     u32::MAX,
                 );
                 for (i, (line, color)) in lines.iter().enumerate() {
                     centered(atlas, batch, line, top + 17.0 + i as f32 * 9.0, *color);
+                }
+                let state = self.sign_in.as_ref().map(crate::msa::SignIn::state);
+                let busy = account_lines(state.as_ref()).1;
+                if !busy {
+                    let rect = Title::account_name_rect(w, h, lines.len());
+                    self.caret.borrow_mut().draw(
+                        batch,
+                        atlas,
+                        (OFFLINE_NAME, &self.offline_name, 16),
+                        rect,
+                        self.offline_name_focused,
+                        self.started,
+                    );
+                    if self.offline_name.is_empty() && !self.offline_name_focused {
+                        batch.text_styled(
+                            atlas,
+                            &Text::literal(lang::get_or(
+                                "horizon.account.offline.placeholder",
+                                "Nickname",
+                            ))
+                            .italic()
+                            .with_color(crate::text::GRAY),
+                            rect[0] + 4.0,
+                            rect[1] + 6.0,
+                            u32::MAX,
+                            true,
+                        );
+                    }
+                    if let Some(error) = &self.offline_name_error {
+                        centered(
+                            atlas,
+                            batch,
+                            error,
+                            rect[1] + 22.0,
+                            rgba(255, 85, 85, 255),
+                        );
+                    }
                 }
             }
             Mode::ConfirmUpdate { build } => {
@@ -3778,8 +3906,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 }
             }
             (Mode::Main, Some(ACCOUNT)) => {
-                self.sign_in = None;
-                self.mode = Mode::Account;
+                self.open_account();
                 Action::None
             }
             (Mode::Account, Some(ACCOUNT_SIGN_IN)) => {
@@ -3801,7 +3928,25 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             }
             (Mode::Account, Some(ACCOUNT_BACK)) => {
                 self.sign_in = None;
+                let _ = self.commit_offline_name();
+                self.offline_name_focused = false;
                 self.mode = Mode::Main;
+                Action::None
+            }
+            (Mode::Account, Some(ACCOUNT_PLAY_OFFLINE)) => {
+                self.sign_in = None;
+                if self.commit_offline_name() {
+                    self.offline_name_focused = false;
+                    self.mode = Mode::Main;
+                }
+                Action::None
+            }
+            (Mode::Account, None) => {
+                let rect = Title::account_name_rect(w, h, self.message_lines.get());
+                self.offline_name_focused = x >= rect[0]
+                    && x < rect[0] + rect[2]
+                    && y >= rect[1]
+                    && y < rect[1] + rect[3];
                 Action::None
             }
             (Mode::Main, Some(4)) => {
@@ -4185,6 +4330,9 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         if self.rules.get_mut().is_some() {
             return None;
         }
+        if matches!(self.mode, Mode::Account) && self.offline_name_focused {
+            return Some((OFFLINE_NAME, &mut self.offline_name, 16));
+        }
         match &mut self.mode {
             Mode::Multiplayer(screen) => screen.focused_text(),
             mode => caret_field(mode, self.search_focused, &mut self.search),
@@ -4196,6 +4344,9 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         if let Some(rules) = self.rules.get_mut() {
             return rules.typing();
         }
+        if matches!(self.mode, Mode::Account) && self.offline_name_focused {
+            return true;
+        }
         caret_field(&mut self.mode, self.search_focused, &mut self.search).is_some()
     }
     /// Edit the focused field through its `EditBox`; false when there is none.
@@ -4203,6 +4354,19 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         if let Some(rules) = self.rules.get_mut() {
             rules.edit(f);
             return rules.typing();
+        }
+        if matches!(self.mode, Mode::Account) && self.offline_name_focused {
+            let before = self.offline_name.clone();
+            self.caret.get_mut().edit(
+                OFFLINE_NAME,
+                &mut self.offline_name,
+                16,
+                f,
+            );
+            if self.offline_name != before {
+                self.offline_name_error = None;
+            }
+            return true;
         }
         let Some((id, value, max)) =
             caret_field(&mut self.mode, self.search_focused, &mut self.search)
@@ -4259,6 +4423,9 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             Mode::CreateBuffet { buffet, .. } if buffet.query_focused => {
                 Some(buffet::search_box(w))
             }
+            Mode::Account if self.offline_name_focused => {
+                Some(Title::account_name_rect(w, h, self.message_lines.get()))
+            }
             _ => None,
         }
     }
@@ -4281,6 +4448,16 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         if !crate::ui::hovered((x, y), fx, fy, fw, fh) {
             return;
         }
+        if matches!(self.mode, Mode::Account) && self.offline_name_focused {
+            self.caret.get_mut().press(
+                atlas,
+                (OFFLINE_NAME, &mut self.offline_name, 16),
+                rect,
+                x,
+                shift,
+            );
+            return;
+        }
         if let Some(field) = caret_field(&mut self.mode, self.search_focused, &mut self.search) {
             self.caret.get_mut().press(atlas, field, rect, x, shift);
         }
@@ -4288,6 +4465,14 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
     /// The pointer moved with the button held (`EditBox.onDrag`).
     pub fn drag_field(&mut self, atlas: &HudAtlas, x: f32) {
         if self.rules.get_mut().is_some() {
+            return;
+        }
+        if matches!(self.mode, Mode::Account) && self.offline_name_focused {
+            self.caret.get_mut().drag(
+                atlas,
+                (OFFLINE_NAME, &mut self.offline_name, 16),
+                x,
+            );
             return;
         }
         if let Some(field) = caret_field(&mut self.mode, self.search_focused, &mut self.search) {
@@ -4938,6 +5123,8 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             Mode::Account => {
                 // Escape while signing in is Cancel; after it, Back.
                 self.cancel_sign_in();
+                let _ = self.commit_offline_name();
+                self.offline_name_focused = false;
                 self.mode = Mode::Main;
             }
             _ => self.mode = Mode::Main,
@@ -4991,6 +5178,7 @@ fn wrapped(atlas: &HudAtlas, text: &str, width: f32) -> Vec<String> {
         .map(|t| t.plain())
         .collect()
 }
+const OFFLINE_NAME: crate::clipboard::FieldId = ("account.offline-name", 0);
 const SEARCH: crate::clipboard::FieldId = ("world.search", 0);
 const EDIT_NAME: crate::clipboard::FieldId = ("world.edit-name", 0);
 const WORLD_NAME: crate::clipboard::FieldId = ("world.name", 0);

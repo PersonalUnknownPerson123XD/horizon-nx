@@ -20,7 +20,7 @@ mod test_runs;
 mod text_commands;
 mod world_cmds;
 
-use super::{Dim, Game, Screen, chat::PLAYER_NAME};
+use super::{Dim, Game, Screen};
 use horizon_client::{
     command::{
         Arg, CommandError, Context, Reader,
@@ -647,8 +647,10 @@ impl Game<'_> {
     }
     /// The name of the player the game acts for: a guest's own while their
     /// command or action runs (`Player.getName`).
-    pub(super) fn acting_player_name(&self) -> &str {
-        self.lan_acting_name.as_deref().unwrap_or(PLAYER_NAME)
+    pub(super) fn acting_player_name(&self) -> String {
+        self.lan_acting_name
+            .clone()
+            .unwrap_or_else(horizon_client::offline_name::current)
     }
     /// Entity.getDisplayName.
     pub(super) fn target_name(&self, t: Target) -> Text {
@@ -656,12 +658,12 @@ impl Game<'_> {
             Target::Player => {
                 let name = self.acting_player_name();
                 if let Some(uuid) = self.lan_acting_uuid {
-                    return self.player_text(name, uuid);
+                    return self.player_text(&name, uuid);
                 }
-                match self.score.board.players_team(name) {
+                match self.score.board.players_team(&name) {
                     // PlayerTeam.formatNameForTeam.
-                    Some(team) => team.formatted_name(Text::literal(name)),
-                    None => Text::literal(name),
+                    Some(team) => team.formatted_name(Text::literal(&name)),
+                    None => Text::literal(&name),
                 }
             }
             Target::Guest(conn) => match self.command_guest(conn) {

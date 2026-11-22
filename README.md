@@ -65,6 +65,49 @@ In the Rust client, with vanilla assets and no mods or shaders:
   </tr>
 </table>
 
+
+## Nintendo Switch (homebrew)
+
+Horizon can run as a homebrew NRO on a Nintendo Switch (`horizon.nro`). It does **not** include Minecraft's files: you copy your own Java Edition 26.3 files onto the SD card. There is no in-game Microsoft download.
+
+### SD card layout
+
+Place the NRO and your files like this (the first-run screen also looks next to the NRO for a `client.jar` or a copied `.minecraft` folder):
+
+```
+sdmc:/switch/horizon/
+  horizon.nro                 # the game
+  client.txt                  # required: start as a client, not a dedicated server
+  env.txt                     # optional (for example HORIZON_LAUNCHER_LOOK, overlay theme)
+  args.txt                    # optional extra launch tokens, one line, `#` comments
+  horizon-player.txt          # written by the game: your offline nickname
+  offline-profile.json        # written by the game: the same name and its offline UUID
+  account.json                # only if you later use optional Microsoft sign-in
+  options.txt
+  saves/
+  resources/                  # preferred: prepared Horizon files (copy from a computer)
+    horizon-resources.json    # required manifest (data version 5023, Java Edition 26.3)
+    block-tags.json           # required; the rest of the prepared tree sits beside these
+    horizon-prepare.json      # optional stamp from horizon-prepare
+    ...                       # assets, data, and the exporter tables horizon-prepare writes
+  client.jar                  # optional fallback: your own Java Edition client jar
+  minecraft/                  # optional fallback: a copy of your .minecraft folder
+    versions/26.3/26.3.jar
+    assets/
+  .minecraft/                 # same as minecraft/, if you copy the folder under that name
+```
+
+**How to get a playable `resources/` folder.** Horizon needs the output of `horizon-prepare` (or the desktop Horizon launcher's prepared folder), not only `client.jar`. On a computer you own Java Edition 26.3 on:
+
+1. Install Horizon's desktop launcher, or build `horizon-prepare` and run `horizon-prepare --prepare`.
+2. Copy the prepared folder (it contains `horizon-resources.json`) to `sdmc:/switch/horizon/resources/`.
+
+If you only copy `client.jar` or `.minecraft`, the first-run screen will find them and tell you to add the prepared folder. Press **Scan again** after you copy it, then **Start**.
+
+**Offline play.** On the title screen, open **Account**, type a nickname (the on-screen keyboard works on the Switch), and choose **Play offline**. That name is used in singleplayer and on offline-mode servers. Microsoft sign-in stays available for online-mode servers; it is optional and does not download game files.
+
+See `docs/switch.md` for how to build the NRO.
+
 ## Host a server
 
 The launcher's **Servers** page creates, starts, backs up and updates a server, and invites friends over Tailscale. On a VPS, `horizon-server` installs with one command and needs no Java. [Host a server](https://playhorizon.dev/docs/hosting) ([reference](docs/hosting.md)).

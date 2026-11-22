@@ -131,6 +131,7 @@ pub mod stopwatches;
 pub mod structure_blocks;
 // Only the Switch build checks for updates; elsewhere its functions are never called.
 #[cfg_attr(not(target_os = "horizon"), allow(dead_code))]
+pub mod switch_setup;
 pub mod switch_update;
 pub mod text_display;
 pub mod tick_chunk_membership;

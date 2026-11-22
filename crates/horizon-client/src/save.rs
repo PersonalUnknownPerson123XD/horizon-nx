@@ -3698,16 +3698,10 @@ impl Level {
             .map_or(2, |i| i as u8)
     }
     /// Initialize the offline single-player identity before saving or dropping items.
+    /// New worlds use the chosen nickname's vanilla offline UUID; a world that
+    /// already stored `singleplayer_uuid` keeps it.
     pub fn ensure_player_uuid(&mut self) -> [i32; 4] {
-        *self.player_uuid.get_or_insert_with(|| {
-            let u = horizon_protocol::crypto::offline_uuid("Player");
-            [
-                (u >> 96) as u32 as i32,
-                (u >> 64) as u32 as i32,
-                (u >> 32) as u32 as i32,
-                u as u32 as i32,
-            ]
-        })
+        *self.player_uuid.get_or_insert_with(crate::offline_name::uuid_ints)
     }
     pub fn game_rule(&self, name: &str) -> i32 {
         self.game_rules

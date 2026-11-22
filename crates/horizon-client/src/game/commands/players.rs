@@ -67,7 +67,7 @@ impl Game<'_> {
     /// by it, without its `~` or with it (quoted), so `/msg` and `/tell`
     /// reach a player by the name chat shows. No nickname, no change.
     pub(super) fn player_named(&self, name: &str) -> Option<Target> {
-        if self.player.is_some() && name.eq_ignore_ascii_case(self.acting_player_name()) {
+        if self.player.is_some() && name.eq_ignore_ascii_case(&self.acting_player_name()) {
             return Some(Target::Player);
         }
         self.command_players()
