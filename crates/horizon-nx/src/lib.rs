@@ -37,6 +37,8 @@ pub mod load_stats;
 mod main_stack;
 #[cfg(target_os = "horizon")]
 mod motion;
+#[cfg(target_os = "horizon")]
+mod system_ui;
 
 pub use compat::{
     ThreadCorePolicy, set_thread_core_policy, set_thread_logging, thread_core_policy,
@@ -52,6 +54,8 @@ pub use lifecycle::relaunch_on_exit;
 pub use main_stack::run_on_main_stack;
 #[cfg(target_os = "horizon")]
 pub use motion::{Motion, motion, stop_motion};
+#[cfg(target_os = "horizon")]
+pub use system_ui::{SystemTheme, shared_font, system_theme};
 pub use lifecycle::{
     flush_logs, init_horizon_services, process_applet_messages, register_release_hook,
     suspend_until_out_of_background,

@@ -337,6 +337,9 @@ impl Keyboard {
     /// the field it types into is in the lower half. `by_letter`: the pad goes by its letters
     /// and the glyphs are Nintendo's, so a hint names the button playing its part.
     pub fn draw(&self, ui: &mut Ui, at_top: bool, glyphs: GlyphStyle, by_letter: bool) {
+        if let Some(p) = crate::switch_skin::palette() {
+            return self.draw_switch(ui, &p, at_top, glyphs, by_letter);
+        }
         let Layout {
             x0,
             y0,
@@ -414,6 +417,106 @@ impl Keyboard {
             y0 + 5.0 * (KEY_H + GAP) + 2.0,
             color::MUTED,
             &line.join("   "),
+        );
+    }
+    /// The hints at the foot of the keyboard: what each button does.
+    fn hints(glyphs: GlyphStyle, by_letter: bool) -> Vec<(String, String)> {
+        [
+            (Button::South, tr("horizon.osk.type", "Type")),
+            (Button::West, tr("horizon.osk.delete", "Delete")),
+            (Button::North, tr("horizon.osk.space", "Space")),
+            (Button::LeftTrigger, tr("horizon.osk.shift", "Shift")),
+            (Button::RightBumper, tr("horizon.osk.symbols", "Symbols")),
+            (Button::Start, tr("gui.done", "Done")),
+            (Button::East, tr("horizon.osk.close", "Close")),
+        ]
+        .into_iter()
+        .map(|(b, what)| {
+            let b = if by_letter { b.by_letter() } else { b };
+            (b.label(glyphs).to_owned(), what)
+        })
+        .collect()
+    }
+
+    /// [`Keyboard::draw`] in the Switch look (`switch_skin`): the same geometry (so taps land
+    /// where keys are drawn), flat rounded keys on a soft panel, a frame that glides to the focused
+    /// key, and round button glyphs for the hints.
+    fn draw_switch(
+        &self,
+        ui: &mut Ui,
+        p: &horizon_theme::Palette,
+        at_top: bool,
+        glyphs: GlyphStyle,
+        by_letter: bool,
+    ) {
+        use crate::switch_skin as skin;
+        use horizon_theme::switch as theme;
+        let Layout {
+            x0,
+            y0,
+            width,
+            plate: (px, py, pw, ph),
+        } = layout(ui.w, ui.h, at_top);
+        let hex = |c: u32| color::hex(c, 255);
+        // A soft drop shadow, then the panel.
+        ui.rounded(px, py + 4.0, pw, ph, theme::RADIUS_PANEL, color::hex(0x000000, 46));
+        ui.rounded(px, py, pw, ph, theme::RADIUS_PANEL, color::hex(p.page, 248));
+        let key_fill = if p.dark { hex(p.plate) } else { hex(p.surface) };
+        let mut focus = None;
+        for (r, row) in self.rows().iter().enumerate() {
+            let y = y0 + r as f32 * (KEY_H + GAP);
+            for (i, (key, units)) in row.iter().enumerate() {
+                let (left, _) = Self::span(row, i);
+                let x = x0 + left * (UNIT + GAP);
+                let w = units * UNIT + (units - 1.0) * GAP;
+                let focused = r == self.row && i == self.col;
+                let lit = matches!(key, Key::Shift) && (self.shift || self.caps)
+                    || matches!(key, Key::Layer) && self.symbols;
+                let (plate, ink) = if matches!(key, Key::Done) {
+                    (hex(p.accent), hex(p.on_accent))
+                } else if lit {
+                    (color::with_alpha(hex(p.accent), 0.28), hex(p.ink))
+                } else if focused {
+                    (hex(if p.dark { p.rule } else { p.plate_soft }), hex(p.ink))
+                } else {
+                    (key_fill, hex(p.ink))
+                };
+                ui.rounded(x, y, w, KEY_H, theme::RADIUS_KEY, plate);
+                if focused {
+                    focus = Some([x, y, w, KEY_H]);
+                }
+                let label = match key {
+                    Key::Char(ch) => self.letter(*ch),
+                    Key::Shift if self.caps => "CAPS".into(),
+                    Key::Shift => tr("horizon.osk.shift", "Shift"),
+                    Key::Layer if self.symbols => "abc".into(),
+                    Key::Layer => "&123".into(),
+                    Key::Space => tr("horizon.osk.space", "Space"),
+                    Key::Backspace => tr("horizon.osk.delete", "Delete"),
+                    Key::Done => tr("gui.done", "Done"),
+                };
+                let lw = ui.measure(Face::Medium, ui_theme::BODY, &label);
+                ui.text_line(
+                    Face::Medium,
+                    ui_theme::BODY,
+                    KEY_H,
+                    x + ((w - lw) / 2.0).round(),
+                    y,
+                    ink,
+                    &label,
+                );
+            }
+        }
+        // The frame goes over every key, so it is drawn last.
+        if let Some(target) = focus {
+            skin::focus_frame(ui, p, target, theme::RADIUS_KEY);
+        }
+        skin::hint_row(
+            ui,
+            p,
+            x0 + width / 2.0,
+            y0 + 5.0 * (KEY_H + GAP) + 2.0,
+            &Self::hints(glyphs, by_letter),
         );
     }
 }

@@ -87,17 +87,33 @@ pub(crate) enum Face {
     /// Counts, timestamps and the boot screen's console lines.
     Mono,
 }
+/// The console's shared font, when the overlays wear the Switch look on a Switch.
+fn system_font() -> Option<&'static [u8]> {
+    #[cfg(target_os = "horizon")]
+    {
+        crate::switch_skin::palette()?;
+        horizon_nx::shared_font()
+    }
+    #[cfg(not(target_os = "horizon"))]
+    {
+        None
+    }
+}
 struct Fonts {
     faces: [FontRef<'static>; 4],
 }
 impl Fonts {
     fn load() -> Self {
         let f = |b: &'static [u8]| FontRef::try_from_slice(b).expect("bundled font");
+        // The Switch look (`switch_skin`) sets its text in the console's own shared font, as the
+        // HOME menu does; it has one weight, so the three proportional faces are the same. A
+        // font the console doesn't hand over (or ab_glyph can't read) leaves Geist.
+        let system = system_font().and_then(|b| FontRef::try_from_slice(b).ok());
         Self {
             faces: [
-                f(horizon_theme::fonts::GEIST_REGULAR),
-                f(horizon_theme::fonts::GEIST_MEDIUM),
-                f(horizon_theme::fonts::GEIST_SEMIBOLD),
+                system.clone().unwrap_or_else(|| f(horizon_theme::fonts::GEIST_REGULAR)),
+                system.clone().unwrap_or_else(|| f(horizon_theme::fonts::GEIST_MEDIUM)),
+                system.unwrap_or_else(|| f(horizon_theme::fonts::GEIST_SEMIBOLD)),
                 f(horizon_theme::fonts::GEIST_MONO),
             ],
         }

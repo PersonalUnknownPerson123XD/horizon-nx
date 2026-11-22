@@ -14,6 +14,7 @@ pub const FONT: &str = "Geist";
 pub const MONO: &str = "Geist Mono";
 pub mod glass;
 pub mod night;
+pub mod switch;
 
 /// The launcher's and the website's display face (headings, navigation, buttons, badges only):
 /// Pixelify Sans, bundled under the SIL Open Font License (`fonts/OFL-PixelifySans.txt`).

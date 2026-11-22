@@ -137,6 +137,7 @@ pub mod tick_chunk_membership;
 pub mod ticket_levels;
 pub mod title;
 pub mod toasts;
+pub mod switch_skin;
 pub mod ui_theme;
 pub mod vanillagen;
 pub mod win_screen;
