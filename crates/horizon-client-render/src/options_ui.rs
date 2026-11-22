@@ -280,6 +280,8 @@ impl Opt {
             Opt::PadGlyphs => "horizon.options.button_glyphs",
             Opt::PadMenuNav => "horizon.options.menu_navigation",
             Opt::PadKeyboard => "horizon.options.on_screen_keyboard",
+            Opt::PadGyro => "horizon.options.gyro",
+            Opt::PadGyroSensitivity => "horizon.options.gyro_sensitivity",
             Opt::ModelPart(i) => [
                 "options.modelPart.cape",
                 "options.modelPart.jacket",
@@ -356,6 +358,7 @@ impl Opt {
             Opt::ChatHeightUnfocused => Kind::Slider(s.chat_height_unfocused),
             Opt::ChatLineSpacing => Kind::Slider(s.chat_line_spacing),
             Opt::PadLookSensitivity => Kind::Slider(s.controller.look_sensitivity),
+            Opt::PadGyroSensitivity => Kind::Slider(s.controller.gyro_sensitivity),
             Opt::PadMoveDeadzone => unit(s.controller.move_deadzone, 0.0, 0.5),
             Opt::PadLookDeadzone => unit(s.controller.look_deadzone, 0.0, 0.5),
             Opt::SprintWindow => unit(s.sprint_window as f32, 0.0, 10.0),
@@ -614,6 +617,7 @@ impl Opt {
                 ),
             ),
             Opt::PadLookSensitivity => percent(c, 2.0 * s.controller.look_sensitivity),
+            Opt::PadGyroSensitivity => percent(c, 2.0 * s.controller.gyro_sensitivity),
             Opt::PadMoveDeadzone | Opt::PadLookDeadzone => {
                 let v = if self == Opt::PadMoveDeadzone {
                     s.controller.move_deadzone
@@ -784,6 +788,13 @@ impl Opt {
             Opt::PadAdaptiveTriggers => on_off(s.controller.adaptive_triggers),
             Opt::PadInvertX => on_off(s.controller.invert_x),
             Opt::PadInvertY => on_off(s.controller.invert_y),
+            Opt::PadGyro => tr(match s.controller.gyro {
+                gamepad::GyroMode::Off => "options.off",
+                gamepad::GyroMode::Always => "horizon.options.gyro.always",
+                gamepad::GyroMode::Attack => "horizon.options.gyro.attack",
+                gamepad::GyroMode::Use => "horizon.options.gyro.use",
+                gamepad::GyroMode::AttackOrUse => "horizon.options.gyro.attack_or_use",
+            }),
             Opt::PadToggleSneak => tr(if s.controller.toggle_sneak {
                 "options.key.toggle"
             } else {
@@ -878,6 +889,7 @@ impl Opt {
             Opt::ChatHeightUnfocused => s.chat_height_unfocused = v,
             Opt::ChatLineSpacing => s.chat_line_spacing = v,
             Opt::PadLookSensitivity => s.controller.look_sensitivity = v,
+            Opt::PadGyroSensitivity => s.controller.gyro_sensitivity = v,
             Opt::PadMoveDeadzone => s.controller.move_deadzone = step(0.0, 50.0) / 100.0,
             Opt::PadLookDeadzone => s.controller.look_deadzone = step(0.0, 50.0) / 100.0,
             Opt::SprintWindow => s.sprint_window = step(0.0, 10.0) as i32,
@@ -1085,6 +1097,14 @@ impl Opt {
             }
             Opt::PadInvertX => s.controller.invert_x = !s.controller.invert_x,
             Opt::PadInvertY => s.controller.invert_y = !s.controller.invert_y,
+            Opt::PadGyro => {
+                let all = gamepad::GyroMode::ALL;
+                let i = all
+                    .iter()
+                    .position(|m| *m == s.controller.gyro)
+                    .unwrap_or(0) as u8;
+                s.controller.gyro = all[usize::from(next(i, all.len() as u8))];
+            }
             Opt::PadToggleSneak => s.controller.toggle_sneak = !s.controller.toggle_sneak,
             Opt::PadLightbar => {
                 let all = gamepad::Lightbar::ALL;
@@ -2705,6 +2725,10 @@ impl OptionsUi {
                     Opt::PadMenuNav,
                     Opt::PadKeyboard,
                 ]));
+                // Gyro aiming reads the Switch controllers' motion sensor.
+                if cfg!(target_os = "horizon") {
+                    rows.extend(pairs(&[Opt::PadGyro, Opt::PadGyroSensitivity]));
+                }
                 rows
             }
             Page::Mouse => pairs(MOUSE_OPTIONS),
